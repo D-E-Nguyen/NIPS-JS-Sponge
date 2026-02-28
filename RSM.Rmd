@@ -1,0 +1,109 @@
+---
+title: "NIPS-JS_Response Surface Methodology"
+author: "De Nguyen"
+output:
+  word_document: 
+    toc: true
+    fig_width: 10
+    fig_height: 6
+    toc_depth: 1
+    keep_md: true
+  html_document:
+    toc: yes
+    number_sections: yes
+    df_print: default
+    fig_width: 10
+    fig_height: 6
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: 120
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F, fig.retina = 5)
+library(rsm)
+library(dplyr)
+library(knitr)
+library(broom)
+```
+
+# Import data
+
+```{r , echo = F}
+nips <- read.csv("NIPS.csv", header = T, row.names = 1)
+dat <- nips
+nips$SUS <- as.factor(nips$SUS)
+nips$EtOH <- as.factor(nips$EtOH)
+nips <- within(nips, SUS <- relevel(SUS, ref = 1))
+nips <- within(nips, EtOH <- relevel(EtOH, ref = 1))
+# nips
+```
+
+
+```{r}
+rsm1 <- rsm(Shrinkage ~ FO(SUS, EtOH), data = dat)
+summary(rsm1)
+rsm1 %>% tidy() %>% kable(digits = 3)
+```
+
+```{r}
+contour(rsm1, ~ SUS + EtOH, image = T,bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)), 
+        zlim = c(40, 60), decode = FALSE)
+lines(c(0.4,0.24,0.24,0.4,0.4), c(0.2,0.2,1,1,0.2), col = "red") # design region
+```
+
+```{r}
+rsm2 <- rsm(Shrinkage ~ SO(SUS, EtOH), data = dat)
+canonical(rsm2, threshold = 0)
+```
+
+```{r}
+contour(rsm2, EtOH ~ SUS, image = T, bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)), 
+        zlim = c(30, 80), decode = FALSE)
+lines(c(0.4,0.24,0.24,0.4,0.4), c(0.2,0.2,1,1,0.2), col = "red") # design region
+points(EtOH ~ SUS, data = canonical.path(rsm2, descent = T, threshold = 0), 
+        col = "blue", pch = 1 + 6*(dist == 0))
+points(0.4, 3, col="black", pch = 22, cex = 2, bg = "blue")
+```
+
+```{r}
+contour(rsm2, EtOH ~ SUS, image = T, at = summary(rsm2)$canonical$xs, bounds = list(EtOH = c(0.1, 5), SUS = c(0, 0.5)), zlim = c(40, 100), decode = F)
+```
+
+
+```{r}
+emmeans::emmeans(rsm1, ~ SUS * EtOH, mode = "decoded", 
+        at = list(SUS = c(0.24, 0.3, 0.4), EtOH = c(0.2, 0.5, 1)))
+```
+
+```{r}
+lm <- lm(Shrinkage ~ poly(SUS, EtOH, degree = 1), data = dat)
+contour(lm, ~ SUS + EtOH, image = T,bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)), 
+        zlim = c(40, 60), decode = FALSE)
+lines(c(0.4,0.24,0.24,0.4,0.4), c(0.2,0.2,1,1,0.2), col = "red") # design region
+points(0.4, 3, col="black", pch = 22, cex = 2, bg = "blue")
+```
+
+
+```{r}
+lm2 <- lm(Shrinkage ~ SUS + EtOH, data = dat)
+summary(lm2)
+anova(lm2)
+contour(lm2, ~ SUS + EtOH, image = T,bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), 
+        zlim = c(50, 65), decode = FALSE)
+lines(c(0.4,0.24,0.24,0.4,0.4), c(0.2,0.2,1,1,0.2), col = "red") # design region
+points(0.4, 3, col="black", pch = 22, cex = 2, bg = "blue")
+par(mfrow = c(2,2))
+lm2 %>% plot()
+```
+
+```{r}
+lm3 <- lm(Density ~ SUS + EtOH, data = dat)
+summary(lm3)
+contour(lm3, ~ SUS + EtOH, image = T,bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), decode = FALSE)
+lines(c(0.4,0.24,0.24,0.4,0.4), c(0.2,0.2,1,1,0.2), col = "red") # design region
+points(0.4, 3, col="black", pch = 22, cex = 2, bg = "blue")
+```
+

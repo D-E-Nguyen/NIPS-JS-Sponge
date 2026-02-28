@@ -1,0 +1,1879 @@
+---
+title: "NIPS-JS"
+author: "De Nguyen"
+output:
+  word_document: 
+    toc: true
+    fig_width: 8
+    fig_height: 6
+    keep_md: true
+  html_document:
+    toc: yes
+    number_sections: yes
+    df_print: default
+    fig_width: 10
+    fig_height: 6
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: 120
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, warning = F, message = F, fig.retina = 5)
+library(psych)
+library(factoextra)
+library(FactoMineR)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(broom)
+library(knitr)
+library(MASS)
+```
+
+# Import data
+
+```{r , echo = F}
+nips <- read.csv("NIPS.csv", header = T, row.names = 1)
+nips$SUS <- as.factor(nips$SUS)
+nips$EtOH <- as.factor(nips$EtOH)
+dat <- nips
+nips <- within(nips, SUS <- relevel(SUS, ref = 1))
+nips <- within(nips, EtOH <- relevel(EtOH, ref = 1))
+# nips
+```
+
+```{r}
+boxplot(nips[,-c(1,2)], main = "Box plot")
+boxplot(scale(nips[,-c(1,2)], center = T), main = "Box plot")
+```
+
+# Corelation test
+
+## Pearson
+
+```{r}
+pairs.panels(
+  nips[,-c(1,2,3,4,5,6,8,13,15,17)],
+  pch = 21,
+  cex.cor = 1.2,
+  gap = 0.5,
+  scale = F,
+  density = T,
+  ellipses = F,
+  lm = F,
+  smooth = F,
+  main = "Pearson_Correlation_Analysis",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = 4,
+  stars = T
+)
+```
+
+## Spearman
+
+```{r}
+pairs.panels(
+  nips[,-c(1,2,3,4,5,6,8,9,13,14,15,16,17,18)],
+  method = "spearman",
+  pch = 21,
+  cex.cor = 1,
+  gap = 0.5,
+  scale = F,
+  density = T,
+  ellipses = F,
+  lm = F,
+  smooth = F,
+  main = "Spearman_Correlation",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = 8,
+  stars = T
+)
+```
+
+```{r}
+correlation_matrix <- cor(nips[,-c(1,2,3,4,5,6,8,9,13,14,15,16,17,18)], method = "spearman")
+cor.mtest <- function(mat, ...) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], method = "spearman", ...)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  p.mat
+}
+
+p_matrix <- cor.mtest(nips[,-c(1,2,3,4,5,6,8,9,13,14,15,16,17,18)])
+decimal_places <- 3
+rounded_correlation_matrix <- round(correlation_matrix, decimal_places)
+rounded_p_matrix <- round(p_matrix, decimal_places)
+rounded_correlation_matrix
+rounded_p_matrix
+write.csv(rounded_correlation_matrix, "spearman_correlation_matrix.csv")
+write.csv(rounded_p_matrix, "spearman_p_matrix.csv")
+```
+
+# PCA
+
+```{r}
+res.pca <- PCA(dat[, c(11,12,13,14,15,16,17,18)], graph = F, ncp = 11)
+# res.pca$var$coord
+
+eig <- as.data.frame(res.pca[["eig"]])
+eig
+
+coord <- as.data.frame(res.pca[["var"]][["coord"]])
+coord
+
+contrib <- as.data.frame(res.pca[["var"]][["contrib"]])
+contrib
+
+cos2 <- as.data.frame(res.pca[["var"]][["cos2"]])
+cos2
+
+contrib <- as.data.frame(res.pca[["var"]][["contrib"]])
+contrib
+
+coord_ind <- as.data.frame(res.pca[["ind"]][["coord"]])
+coord_ind
+```
+
+## Scree plot
+
+```{r , echo = F}
+a1 <- fviz_eig(res.pca, addlabels = T, ylim = c(1,90),
+         title = "Scree plot", ylab = "Explained variances (%)"
+         ) +
+    theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 11, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        legend.text = element_text(size = 15, face = "bold"),
+        aspect.ratio = 1.7,
+        )
+b1 <- fviz_pca_var(res.pca,
+                 title = "Variables \ncorrelation plot",
+                 col.var = "cos2",
+                 gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+                 repel = T,
+                 arr.width = 25,) +
+    theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 11, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        # = element_rect(fill = F),
+        legend.title = element_text(size = 15, face = "bold"),
+        legend.text = element_text(size = 15, face = "bold"),
+        aspect.ratio = 1,
+        )
+c1 <- fviz_contrib(res.pca, choice = "var", axes = 1, top = 11, title = "Contribution \nDim1") +
+    theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        legend.text = element_text(size = 15, face = "bold"),
+        aspect.ratio = 1.8,
+        )
+d1 <- fviz_contrib(res.pca, choice = "var", axes = 2, top = 11, title = "Contribution \nDim2") +
+    theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        legend.text = element_text(size = 15, face = "bold"),
+        aspect.ratio = 1.8,
+        )
+e1 <- fviz_contrib(res.pca, choice = "var", axes = 3, top = 11, title = "Contribution \nDim3") +
+    theme(
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        legend.text = element_text(size = 15, face = "bold"),
+        aspect.ratio = 1.8,
+        )
+```
+
+```{r}
+plot_grid(a1,b1, ncol = 2, nrow = 1, labels = c("A","B"), label_size = 15,rel_widths = c(1,1), rel_heights = c(1,1))
+```
+
+```{r}
+plot_grid(c1,d1,e1, ncol = 3, nrow = 1, labels = c("A","B","C"), label_size = 15,rel_widths = c(1,1), rel_heights = c(1,1))
+```
+
+## Biplot trên PC1-PC2
+
+```{r , echo = F}
+a2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$SUS,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "SUS\n (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+
+b2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$EtOH,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "EtOH", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+plot_grid(a2,b2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## Biplot trên PC1-PC3
+
+```{r , echo = F}
+a3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$SUS,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "SUS\n (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+
+b3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$EtOH,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "EtOH\n (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+plot_grid(a3,b3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## Biplot trên PC2-PC3
+
+```{r , echo = F}
+a4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$SUS,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "SUS\n (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+
+b4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$EtOH,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = T,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "EtOH\n (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS\n(%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 16, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .6,
+        legend.position = "bottom"
+        )
+plot_grid(a4,b4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## Biplot trên PC1-PC2 with labels
+
+```{r , echo = F}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$SUS,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = F,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "SUS (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS (%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 13, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .65
+        )
+```
+
+```{r , echo = F}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$EtOH,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = F,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "EtOH (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "EtOH (%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 13, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .65
+        )
+```
+
+## Biplot PC7-PC8
+
+```{r , echo = F}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(7, 8),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,# dat$SUS,
+  fill.ind = dat$SUS,
+#  palette = c("red", "blue", "#747474", "green"),
+  col.ind = "black",
+  addEllipses = F,
+#  alpha.var = "contrib",
+  col.var = "black",# "contrib",
+  arr.width = 25,
+#  gradient.cols = c("#BBC4C2", "#7E7C73", "#464033", "#140005"),
+  legend.title = list(fill = "SUS (%)", color = "Variable\ncontribution (%)", alpha = "Variable\ncontribution (%)", size = "SUS (%)"),
+  mean.point = F,
+  repel = T,
+  ) +
+  guides(fill = guide_legend(order = 1),
+         alpha = guide_legend(order = 3),
+         size = guide_legend(order = 2),
+         color = F,
+         ) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 13, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = .65
+        )
+```
+
+# Normality check
+
+Các biến tuân theo luật phân bố chuẩn \## Shapiro test
+
+```{r}
+shapiro.test(nips$Weight)
+shapiro.test(nips$Diameter)
+shapiro.test(nips$Height)
+shapiro.test(nips$Volume)
+shapiro.test(nips$Density)
+shapiro.test(nips$Porosity)
+shapiro.test(nips$Shrinkage)
+shapiro.test(nips$Recovery)
+shapiro.test(nips$Modulus)
+shapiro.test(nips$A0)
+shapiro.test(nips$A1)
+shapiro.test(nips$t1)
+shapiro.test(nips$A2)
+shapiro.test(nips$t2)
+shapiro.test(nips$A3)
+shapiro.test(nips$t3)
+shapiro.test(nips$T)
+```
+
+## qqnorm & histogram
+
+```{r}
+par(mfrow = c(3,6))
+qqnorm(nips$Weight, main = "Weight"); qqline(nips$Weight)
+qqnorm(nips$Diameter, main = "Diameter"); qqline(nips$Diameter)
+qqnorm(nips$Height, main = "Height"); qqline(nips$Height)
+qqnorm(nips$Volume, main = "Volume"); qqline(nips$Volume)
+qqnorm(nips$Density, main = "Density"); qqline(nips$Density)
+qqnorm(nips$Porosity, main = "Porosity"); qqline(nips$Porosity)
+qqnorm(nips$Shrinkage, main = "Shrinkage"); qqline(nips$Shrinkage)
+qqnorm(nips$Recovery, main = "Recovery"); qqline(nips$Recovery)
+qqnorm(nips$Modulus, main = "Modulus"); qqline(nips$Modulus)
+qqnorm(nips$A0, main = "A0"); qqline(nips$A0)
+qqnorm(nips$A1, main = "A1"); qqline(nips$A1)
+qqnorm(nips$t1, main = "t1"); qqline(nips$t1)
+qqnorm(nips$A2, main = "A2"); qqline(nips$A2)
+qqnorm(nips$t2, main = "t2"); qqline(nips$t2)
+qqnorm(nips$A3, main = "A3"); qqline(nips$A3)
+qqnorm(nips$t3, main = "t3"); qqline(nips$t3)
+qqnorm(nips$T, main = "T"); qqline(nips$T)
+```
+
+# Hồi quy & ANOVA:
+
+## Hồi quy riêng rẽ & ANOVA
+
+### Diameter
+
+```{r}
+mod1 <- lm(nips$Diameter ~ SUS + EtOH, data = nips)
+mod1 %>% summary()
+mod1 %>% anova()
+mod1 %>% tidy() %>% kable(digits = 3)
+mod1 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod1 %>% plot()
+```
+
+### Height
+
+```{r}
+mod2 <- lm(nips$Height ~ SUS + EtOH, data = nips)
+mod2 %>% summary()
+mod2 %>% anova()
+mod2 %>% tidy() %>% kable(digits = 3)
+mod2 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod2 %>% plot()
+```
+
+### Volume
+
+```{r}
+mod3 <- lm(nips$Volume ~ SUS + EtOH, data = nips)
+mod3 %>% summary()
+mod3 %>% anova()
+mod3 %>% tidy() %>% kable(digits = 3)
+mod3 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod3 %>% plot()
+```
+
+### Density
+
+```{r}
+mod4 <- lm(nips$Density ~ SUS + EtOH, data = nips)
+mod4 %>% summary()
+mod4 %>% anova()
+mod4 %>% tidy() %>% kable(digits = 3)
+mod4 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod4 %>% plot()
+```
+
+### Porosity
+
+```{r}
+mod5 <- lm(nips$Porosity ~ SUS + EtOH, data = nips)
+mod5 %>% summary()
+mod5 %>% anova()
+mod5 %>% tidy() %>% kable(digits = 3)
+mod5 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod5 %>% plot()
+```
+
+### Shrinkage
+
+```{r}
+mod6 <- lm(nips$Shrinkage ~ SUS + EtOH, data = nips)
+mod6 %>% summary()
+mod6 %>% anova()
+mod6 %>% tidy() %>% kable(digits = 3)
+mod6 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod6 %>% plot()
+```
+
+### Recovery
+
+```{r}
+mod7 <- lm(nips$Recovery ~ SUS + EtOH, data = nips)
+mod7 %>% summary()
+mod7 %>% anova()
+mod7 %>% tidy() %>% kable(digits = 3)
+mod7 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod7 %>% plot()
+```
+
+#### Recovery with interaction
+
+```{r}
+mod7a <- lm(nips$Recovery ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod7a %>% summary()
+mod7a %>% anova()
+mod7a %>% tidy() %>% kable(digits = 3)
+mod7a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod7a %>% plot()
+```
+
+### Modulus
+
+```{r}
+mod8 <- lm(nips$Modulus ~ SUS + EtOH, data = nips)
+mod8 %>% summary()
+mod8 %>% anova()
+mod8 %>% tidy() %>% kable(digits = 3)
+mod8 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod8 %>% plot()
+```
+
+#### Modulus with interaction
+
+```{r}
+mod8a <- lm(nips$Modulus ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod8a %>% summary()
+mod8a %>% anova()
+mod8a %>% tidy() %>% kable(digits = 3)
+mod8a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod8a %>% plot()
+```
+
+### A0
+
+```{r}
+mod9 <- lm(nips$A0 ~ SUS + EtOH, data = nips)
+mod9 %>% summary()
+mod9 %>% anova()
+mod9 %>% tidy() %>% kable(digits = 3)
+mod9 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod9 %>% plot()
+```
+
+#### A0 with interaction
+
+```{r}
+mod9a <- lm(nips$A0 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod9a %>% summary()
+mod9a %>% anova()
+mod9a %>% tidy() %>% kable(digits = 3)
+mod9a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod9a %>% plot()
+```
+
+### A1
+
+```{r}
+mod10 <- lm(nips$A1 ~ SUS + EtOH, data = nips)
+mod10 %>% summary()
+mod10 %>% anova()
+mod10 %>% tidy() %>% kable(digits = 3)
+mod10 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod10 %>% plot()
+```
+
+### t1
+
+```{r}
+mod11 <- lm(nips$t1 ~ SUS + EtOH, data = nips)
+mod11 %>% summary()
+mod11 %>% anova()
+mod11 %>% tidy() %>% kable(digits = 3)
+mod11 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod11 %>% plot()
+```
+
+#### t1 with interaction
+
+```{r}
+mod11a <- lm(nips$t1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod11a %>% summary()
+mod11a %>% anova()
+mod11a %>% tidy() %>% kable(digits = 3)
+mod11a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod11a %>% plot()
+```
+
+### A2
+
+```{r}
+mod12 <- lm(nips$A2 ~ SUS + EtOH, data = nips)
+mod12 %>% summary()
+mod12 %>% anova()
+mod12 %>% tidy() %>% kable(digits = 3)
+mod12 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod12 %>% plot()
+```
+
+### t2
+
+```{r}
+mod13 <- lm(nips$t2 ~ SUS + EtOH, data = nips)
+mod13 %>% summary()
+mod13 %>% anova()
+mod13 %>% tidy() %>% kable(digits = 3)
+mod13 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod13 %>% plot()
+```
+
+#### t2 with interaction
+
+```{r}
+mod13a <- lm(nips$t2 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod13a %>% summary()
+mod13a %>% anova()
+mod13a %>% tidy() %>% kable(digits = 3)
+mod13a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod13a %>% plot()
+```
+
+### A3
+
+```{r}
+mod14 <- lm(nips$A3 ~ SUS + EtOH, data = nips)
+mod14 %>% summary()
+mod14 %>% anova()
+mod14 %>% tidy() %>% kable(digits = 3)
+mod14 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod14 %>% plot()
+```
+
+### t3
+
+```{r}
+mod15 <- lm(nips$t3 ~ SUS + EtOH, data = nips)
+mod15 %>% summary()
+mod15 %>% anova()
+mod15 %>% tidy() %>% kable(digits = 3)
+mod15 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod15 %>% plot()
+```
+
+#### t3 with interaction
+
+```{r}
+mod15a <- lm(nips$t3 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod15a %>% summary()
+mod15a %>% anova()
+mod15a %>% tidy() %>% kable(digits = 3)
+mod15a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod15a %>% plot()
+```
+
+### T
+
+```{r}
+mod16 <- lm(nips$T ~ SUS + EtOH, data = nips)
+mod16 %>% summary()
+mod16 %>% anova()
+mod16 %>% tidy() %>% kable(digits = 3)
+mod16 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod16 %>% plot()
+```
+
+#### T with interaction
+
+```{r}
+mod16a <- lm(nips$T ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod16a %>% summary()
+mod16a %>% anova()
+mod16a %>% tidy() %>% kable(digits = 3)
+mod16a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod16a %>% plot()
+```
+
+### Residual_stress
+
+```{r}
+mod17 <- lm(nips$RS ~ SUS + EtOH, data = nips)
+mod17 %>% summary()
+mod17 %>% anova()
+mod17 %>% tidy() %>% kable(digits = 3)
+mod17 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod17 %>% plot()
+```
+
+#### Residual_stress with interaction
+
+```{r}
+mod17a <- lm(nips$RS ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod17a %>% summary()
+mod17a %>% anova()
+mod17a %>% tidy() %>% kable(digits = 3)
+mod17a %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod17a %>% plot()
+```
+
+## Hồi quy nhiều chiều & ANOVA
+
+####lm(cbind(Modulus,A0,A1,t1,A2,t2,A3,t3) \~ SUS + EtOH)
+
+```{r}
+mod2.1 <- lm(cbind(nips$Modulus,nips$A0,nips$T,nips$Recovery) ~ SUS + EtOH, data = nips)
+mod2.1 %>% summary()
+mod2.1 %>% anova()
+mod2.1 %>% tidy() %>% kable(digits = 3)
+mod2.1 %>% anova %>% kable(digits = 3)
+par(mfrow = c(2,2))
+```
+
+###lm(cbind(Modulus,A0,T,Recovery) \~ SUS + EtOH + SUS\*EtOH)
+
+```{r}
+mod2.1a <- lm(cbind(nips$Modulus,nips$A0,nips$T,nips$Recovery) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod2.1a %>% summary()
+mod2.1a %>% anova()
+mod2.1a %>% tidy() %>% kable(digits = 3)
+mod2.1a %>% anova %>% kable(digits = 3)
+par(mfrow = c(2,2))
+```
+
+## Hồi quy nhiều chiều & ANOVA trên thành phần chính
+
+### lm(cbind(Dim.1,Dim.2) \~ SUS + EtOH + SUS\*EtOH)
+
+```{r}
+score <- data.frame(res.pca$ind$coord)
+mod3.1 <- lm(cbind(score$Dim.1,score$Dim.2) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.1 %>% summary()
+mod3.1 %>%  anova()
+mod3.1 %>% tidy() %>% kable(digits = 3)
+mod3.1 %>% anova %>% kable(digits = 3)
+```
+
+### lm(Dim.1 \~ SUS + EtOH)
+
+```{r}
+mod3.2 <- lm(score$Dim.1 ~ SUS + EtOH, data = nips)
+mod3.2 %>% summary()
+mod3.2 %>%  anova()
+mod3.2 %>% tidy() %>% kable(digits = 3)
+mod3.2 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod3.2 %>% plot()
+```
+
+### Interaction lm(Dim.1 \~ SUS + EtOH + SUS\*EtOH)
+
+```{r}
+mod3.3 <- lm(score$Dim.1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.3 %>% summary()
+mod3.3 %>%  anova()
+mod3.3 %>% tidy() %>% kable(digits = 3)
+mod3.3 %>% anova %>% kable(digits = 3)
+```
+
+```{r}
+par(mfrow = c(2,2))
+mod3.3 %>% plot()
+```
+
+# MANOVA
+
+## SUS
+
+manova(cbind(Modulus,A0,A1,t1,A2,t2,A3,t3) \~ SUS) Summary model
+
+```{r}
+mod4.1 <- manova(cbind(nips$Modulus,nips$A0,nips$A1,nips$t1,nips$A2,nips$t2,nips$A3,nips$t3) ~ SUS, data = nips)
+mod4.1 %>% summary.manova(intercept = T, "Pillai")
+mod4.1 %>% summary.manova(intercept = T, "Wilks")
+mod4.1 %>% summary.manova(intercept = T, "Hotelling-Lawley")
+mod4.1 %>% summary.manova(intercept = T, "Roy")
+```
+
+Summary.aov model
+
+```{r}
+mod4.1 %>% summary.aov()
+mod4.1 %>% tidy() %>% kable(digits = 3)
+```
+
+## EtOH
+
+manova(cbind(Modulus,A0,A1,t1,A2,t2,A3,t3) \~ EtOH) Summary model
+
+```{r}
+mod5.1 <- manova(cbind(nips$Modulus,nips$A0,nips$A1,nips$t1,nips$A2,nips$t2,nips$A3,nips$t3) ~ EtOH, data = nips)
+mod5.1 %>% summary.manova(intercept = T, "Pillai")
+mod5.1 %>% summary.manova(intercept = T, "Wilks")
+mod5.1 %>% summary.manova(intercept = T, "Hotelling-Lawley")
+mod5.1 %>% summary.manova(intercept = T, "Roy")
+```
+
+Summary.aov model
+
+```{r}
+mod5.1 %>% summary.aov()
+mod5.1 %>% tidy() %>% kable(digits = 3)
+```
+
+<!-- # ASCA -->
+
+<!-- Factor 1: SUS -->
+
+<!-- Factor 2: EtOH -->
+
+<!-- ```{r} -->
+
+<!-- set.seed(1234) -->
+
+<!-- nips.F = nips[, c(1,2)] -->
+
+<!-- map.1 = c("0.27" = 1, "0.33" = 2, "0.44" = 3) -->
+
+<!-- nips.F$SUS = map.1[nips.F$SUS] -->
+
+<!-- map.2 = c("0.2" = 1, "0.5" = 2, "1" = 3) -->
+
+<!-- nips.F$EtOH = map.2[nips.F$EtOH] -->
+
+<!-- names(nips.F)[1] = paste("1") -->
+
+<!-- names(nips.F)[2] = paste("2") -->
+
+<!-- nips.F = as.matrix(nips.F) -->
+
+<!-- nips.X = nips[, 8:16] -->
+
+<!-- nips.X = as.matrix(nips.X) -->
+
+<!-- ASCA.nips = ASCA.Calculate(nips.X, nips.F, equation.elements = "1,2,12", scaling = T) -->
+
+<!-- ASCA.DoPermutationTest(ASCA.nips, perm = 1000) -->
+
+<!-- ``` -->
+
+# Boxplot
+
+## One-Factor boxplot
+
+### Diameter
+
+```{r}
+p1.1 <- ggplot(dat, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.1 <- ggplot(dat, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.1,p2.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Height
+
+```{r}
+p1.2 <- ggplot(dat, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.2 <- ggplot(dat, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.2,p2.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Volume
+
+```{r}
+p1.3 <- ggplot(dat, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.3 <- ggplot(dat, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.3,p2.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Density
+
+```{r}
+p1.4 <- ggplot(dat, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.4 <- ggplot(dat, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.4,p2.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Porosity
+
+```{r}
+p1.5 <- ggplot(dat, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.5 <- ggplot(dat, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.5,p2.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Shrinkage
+
+```{r}
+p1.6 <- ggplot(dat, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.6 <- ggplot(dat, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.6,p2.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Recovery
+
+```{r}
+p1.7 <- ggplot(dat, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.7 <- ggplot(dat, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.7,p2.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Modulus
+
+```{r}
+p1.8 <- ggplot(dat, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.8 <- ggplot(dat, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.8,p2.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A0
+
+```{r}
+p1.9 <- ggplot(dat, aes(x = SUS, y = A0)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.9 <- ggplot(dat, aes(x = EtOH, y = A0)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.9,p2.9, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A1
+
+```{r}
+p1.10 <- ggplot(dat, aes(x = SUS, y = A1)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.10 <- ggplot(dat, aes(x = EtOH, y = A1)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.10,p2.10, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t1
+
+```{r}
+p1.11 <- ggplot(dat, aes(x = SUS, y = t1)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.11 <- ggplot(dat, aes(x = EtOH, y = t1)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.11,p2.11, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A2
+
+```{r}
+p1.12 <- ggplot(dat, aes(x = SUS, y = A2)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.12 <- ggplot(dat, aes(x = EtOH, y = A2)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.12,p2.12, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t2
+
+```{r}
+p1.13 <- ggplot(dat, aes(x = SUS, y = t2)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.13 <- ggplot(dat, aes(x = EtOH, y = t2)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.13,p2.13, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A3
+
+```{r}
+p1.14 <- ggplot(dat, aes(x = SUS, y = A3)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.14 <- ggplot(dat, aes(x = EtOH, y = A3)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.14,p2.14, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t3
+
+```{r}
+p1.15 <- ggplot(dat, aes(x = SUS, y = t3)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.15 <- ggplot(dat, aes(x = EtOH, y = t3)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.15,p2.15, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### T
+
+```{r}
+p1.16 <- ggplot(dat, aes(x = SUS, y = T)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p2.16 <- ggplot(dat, aes(x = EtOH, y = T)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p1.16,p2.16, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## Two-Factors boxplot
+
+### Diameter
+
+```{r}
+p3.1 <- ggplot(dat, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.1 <- ggplot(dat, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.1,p4.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Height
+
+```{r}
+p3.2 <- ggplot(dat, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.2 <- ggplot(dat, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.2,p4.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Volume
+
+```{r}
+p3.3 <- ggplot(dat, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.3 <- ggplot(dat, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.3,p4.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Density
+
+```{r}
+p3.4 <- ggplot(dat, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.4 <- ggplot(dat, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.4,p4.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Porosity
+
+```{r}
+p3.5 <- ggplot(dat, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.5 <- ggplot(dat, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.5,p4.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Shrinkage
+
+```{r}
+p3.6 <- ggplot(dat, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.6 <- ggplot(dat, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.6,p4.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Retension
+
+```{r}
+p3.7 <- ggplot(dat, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.7 <- ggplot(dat, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.7,p4.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Modulus
+
+```{r}
+p3.8 <- ggplot(dat, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+p4.8 <- ggplot(dat, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme(legend.title = element_text(size = 14, face = "bold.italic"),
+        legend.text = element_text(size = 13, face = "bold"),
+        axis.title = element_text(size = 15, face = "bold"),
+        axis.text = element_text(size = 14, face = "bold"),
+        plot.title = element_text(size = 15, face = "bold"),
+        panel.border = element_rect(fill = F),
+        aspect.ratio = 1,
+        legend.position = "bottom"
+        )
+
+plot_grid(p3.8,p4.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+# Box Cox transformation
+
+## Recovery
+
+```{r}
+par(mfrow = c(3,3))
+boxcox(nips$Diameter ~ 1); mtext("Diameter", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Height ~ 1); mtext("Height", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Volume ~ 1); mtext("Volume", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Density ~ 1); mtext("Density", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Porosity ~ 1); mtext("Porosity", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Shrinkage ~ 1); mtext("Shrinkage", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Recovery ~ 1); mtext("Recovery", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$Modulus ~ 1); mtext("Modulus", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$A0 ~ 1); mtext("A0", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$A1 ~ 1); mtext("A1", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$A2 ~ 1); mtext("A2", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$A3 ~ 1); mtext("A3", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$t1 ~ 1); mtext("t1", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$t2 ~ 1); mtext("t2", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$t3 ~ 1); mtext("t3", side=3, line=1, at=0, col="blue", las=1)
+boxcox(nips$T ~ 1); mtext("T", side=3, line=1, at=0, col="blue", las=1)
+```
+
+```{r}
+x <- nips$Diameter; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Height; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Volume; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Density; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Porosity; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Shrinkage; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Recovery; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$Modulus; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$A0; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$A1; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$A2; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$A3; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$t1; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$t2; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$t3; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+x <- nips$T; b <- boxcox(lm(x ~ 1), plotit = F); b$x[which.max(b$y)]
+```
