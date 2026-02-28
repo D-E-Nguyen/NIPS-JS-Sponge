@@ -1,4 +1,3 @@
-R Analysis
 This repository contains the R scripts used to perform data analysis and visualization for the following research publications.
 
 📄 Publications
