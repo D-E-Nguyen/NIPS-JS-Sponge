@@ -82,6 +82,34 @@ models, Box–Cox, second-order RSM) are exploratory work beyond the published s
 
 ---
 
+## 🌐 Browse the notebook online
+
+The rendered notebook is committed as `docs/index.html` so it can be served with
+**GitHub Pages**: in the repository settings, open *Pages* and choose *Deploy from a
+branch* → branch `main`, folder `/docs`. The full analysis is then browsable at
+`https://<your-username>.github.io/<repository-name>/` — no R required.
+
+Reading aids built into the page:
+
+- a **floating table of contents** for jumping between sections;
+- **§ anchor links** on every heading, so any section can be linked to directly;
+- the whole analysis is a **single page**, so the browser's find-in-page (Ctrl/Cmd+F)
+  searches every interpretation, table, and result at once;
+- a **Code ▾ → Download Rmd** button (top right) that hands the reader the complete
+  source file.
+
+(Until Pages is enabled, the file can be previewed via
+`https://htmlpreview.github.io/?` followed by the raw-file URL of `docs/index.html`.)
+
+To refresh the site after editing the notebook:
+
+```r
+rmarkdown::render("NIPS.Rmd", output_format = "html_document",
+                  output_dir = "docs", output_file = "index.html")
+```
+
+---
+
 ## ▶️ How to reproduce
 
 1. Install the required packages:
@@ -109,7 +137,7 @@ Notes:
   (light → dark = low → high) and warm reds encode the ethanol levels, so hue identifies
   the factor and darkness the level throughout the document.
 
-## 📖 For readers
+## 📖 For readers and students
 
 Each analysis section is followed by an **Interpretation** paragraph explaining what the
 output means, why that method was chosen, and what its limitations are. The notebook is
