@@ -4,6 +4,9 @@ author: "De Nguyen"
 output:
   html_document:
     toc: yes
+    toc_float:
+      collapsed: true
+    toc_depth: 3
     number_sections: yes
     df_print: default
     fig_width: 10
@@ -23,7 +26,8 @@ editor_options:
 ```{r setup, include=FALSE}
 # Global chunk options: code is hidden in the rendered report (echo = FALSE), so the
 # knitted document shows only figures and tables. Read this .Rmd file for the code.
-knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.retina = 5)
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.retina = 2,
+                      dev = "svglite")  # vector figures; use dev = "png" for Word/PDF output
 
 library(psych)       # pairs.panels(): scatter-plot matrices with correlations
 library(factoextra)  # fviz_*(): publication-ready PCA graphics
@@ -34,15 +38,74 @@ library(cowplot)     # plot_grid(): combining plots into labelled panels
 library(broom)       # tidy(): turn model summaries into data frames
 library(knitr)       # kable(): formatted tables in the rendered document
 library(MASS)        # boxcox(): Box–Cox transformation profiles
+library(car)         # Anova(type = 2): order-free tests for the summary table
 library(rsm)         # response-surface models: FO()/SO(), canonical analysis, contour.lm()
 # emmeans is called via emmeans::emmeans() without attaching the package.
+
+## ---- Figure styling: one colour system for the whole document -------------------
+## Each design factor gets a single-hue ramp whose light -> dark order follows the
+## concentration order, so hue identifies the factor and darkness identifies the
+## level in every figure: SUS = blues, EtOH = reds. Both ramps are colour-blind-safe
+## (adjacent-step separation validated for deutan/protan/tritan vision). Box fills are
+## drawn at alpha 0.65 so that medians/whiskers stay readable on the darkest steps; the
+## overlaid dots carry the full-strength colours, and axis position encodes the level
+## in every gallery panel, so no information rides on the lightened fills alone.
+pal_sus  <- c("0.24" = "#5FB0E2", "0.3" = "#2171B5", "0.4" = "#08306B")
+pal_etoh <- c("0.2"  = "#FB6A4A", "0.5" = "#CB181D", "1"   = "#67000D")
+scale_sus  <- scale_fill_manual(values = pal_sus)
+scale_etoh <- scale_fill_manual(values = pal_etoh)
+scale_sus_line  <- scale_colour_manual(values = pal_sus)   # ellipse outlines in biplots
+scale_etoh_line <- scale_colour_manual(values = pal_etoh)
+col_accent  <- "#B2352C"                       # annotation accent: fit/reference lines
+col_bar     <- "#2171B5"                       # single-series bars (scree, contributions)
+pal_surface <- colorRampPalette(c("#F7FBFF", "#C9DDF0", "#8FBEE0", "#4A94CB"))(64)
+
+## Publication base theme: white background, black axis text, no decorative bolding.
+theme_pub <- theme_classic(base_size = 14) +
+  theme(
+    axis.text    = element_text(size = 13, face = "bold", colour = "black"),
+    axis.title   = element_text(size = 15, face = "bold"),
+    axis.line    = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks   = element_line(linewidth = 0.5, colour = "black"),
+    plot.title   = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 13, face = "bold.italic"),
+    legend.text  = element_text(size = 12, face = "bold")
+  )
 ```
+
+```{css doc-style, echo=FALSE}
+/* Typography and reading comfort (HTML output only) */
+body { font-size: 16px; line-height: 1.65; color: #1a1a1a; }
+h1, h2, h3, h4 { color: #08306B; }
+h1 { border-bottom: 2px solid #C9DDF0; padding-bottom: .25em; }
+
+/* Interpretation call-outs: the discussion blocks are visually separated from
+   methods text so readers can scan figure -> box -> next section */
+.interpretation {
+  background: #F2F7FC;
+  border-left: 4px solid #2171B5;
+  border-radius: 0 6px 6px 0;
+  padding: .85em 1.15em;
+  margin: 1.3em 0;
+}
+.interpretation > p:first-child { margin: 0 0 0.35em 0; }
+.interpretation > p:first-child > strong:first-child { color: #2171B5; font-size: 1.04em; }
+
+/* Tables: quiet zebra striping, strong header rule */
+table { border-collapse: collapse; margin: 1em 0; }
+th { border-bottom: 2px solid #08306B; padding: 5px 12px; text-align: left; }
+td { padding: 4px 12px; }
+tbody tr:nth-child(even) { background: #F7FAFD; }
+
+/* Console output blocks: recessive, clearly non-prose */
+pre { border-left: 3px solid #DCE7F2; background: #FAFBFD; }
+```
+
 
 # About this document
 
 This notebook contains the complete dataset documentation and statistical analysis behind
-the NIPS-JS sponge studies (it merges the repository's former `NIPS.Rmd` and `RSM.Rmd`
-into one systematic workflow):
+the NIPS-JS sponge studies:
 
 1. *Nonsolvent-Induced Phase Separation–Jet Spinning: An Innovative Technique for Producing
    Cellulosic Nanofilms, Suspensions, and Nanofilm-Based Sponges* (2025), ACS Omega,
@@ -51,29 +114,35 @@ into one systematic workflow):
    cryo-templating* (2025), Polymer Journal,
    <https://doi.org/10.1038/s41428-025-01083-z>
 
+If this dataset or analysis is useful in your research, please cite the corresponding
+publication(s) above — ready-to-use BibTeX entries are provided in the repository's
+`README.md`.
+
 Forty sponges were fabricated in a 3 × 3 full factorial design over two experimental
 factors — the polymer suspension concentration (`SUS`: 0.24, 0.3, 0.4 wt%) and the ethanol
-cosolvent concentration (`EtOH`: 0.2, 0.5, 1 wt%), with 4–7 replicates per combination —
-and characterised by a set of physical and mechanical response variables.
+cosolvent concentration (`EtOH`: 0.2, 0.5, 1 wt%), with 4–7 replicates per combination
+(counted from the shipped dataset; the Polymer Journal Experimental section quotes 3–5) —
+and characterized by a set of physical and mechanical response variables.
 
-The document is organised as a pipeline from raw data to models:
+The document is organized as a pipeline from raw data to models:
 
 1. **Study data** — import and overview of all responses.
 2. **Distributional checks** — Shapiro–Wilk tests, normal Q–Q plots and Box–Cox profiles,
-   run before any modelling.
-3. **Factor effects I: distributions by factor level** — one-factor boxplots for each
-   response and two-factor boxplots for selected responses.
-4. **Factor effects II: regression & ANOVA** — a linear model per response with `SUS` and
+   run before any modeling.
+3. **Factor effects I: distributions by factor level** — one-factor boxplots for the
+   responses and two-factor boxplots for selected responses.
+4. **Factor effects II: regression & ANOVA** — a linear model for each response that enters the models (all but `Weight`) with `SUS` and
    `EtOH` as categorical predictors, plus interaction models for selected responses.
 5. **Correlations between responses** — Pearson and Spearman analyses.
 6. **Multivariate analysis** — PCA with biplots, multi-response regression, regression on
-   component scores, and MANOVA.
+   component scores, MANOVA, and an ASCA partition of the multivariate variation.
 7. **Response-surface analysis** — `SUS` and `EtOH` as continuous predictors: first- and
-   second-order surfaces for Shrinkage, canonical analysis, steepest descent, and
+   second-order surfaces for Shrinkage, canonical analysis, a validation test against
+   the EtOH = 3 wt% sponges, and
    cross-checks with ordinary regression.
 8. **Structure–property scaling** — Gibson–Ashby power-law fit of relative modulus vs
    relative density.
-9. **Appendix** — an unevaluated ASCA sketch kept for reference.
+9. **Concluding remarks** — the overall picture in brief.
 
 Two representations of the dataset are used: the factor version `nips` (the design levels
 as discrete groups; used everywhere except the response-surface part) and the numeric
@@ -107,7 +176,7 @@ used to validate the RSM prediction (EtOH = 3 wt%) are provided in `NIPS_validat
 | `Modulus` | response | Apparent elastic modulus E\* from compression (kPa). |
 | `A0`; `A1`,`t1`; `A2`,`t2`; `A3`,`t3` | response | Three-branch generalized Maxwell fit of the stress-relaxation curves: equilibrium stress σ~e~ (`A0`, kPa), branch stresses σ~1–3~ (`A1`–`A3`, kPa) and relaxation times τ~1–3~ (`t1`–`t3`, s). |
 | `T` | response | Characteristic relaxation time τ (s): the sum of the constituent relaxation times, t1 + t2 + t3. Caution: `T` is also R's shorthand for `TRUE`; the column is therefore always accessed through the data frame (e.g. `nips$T`), never as a bare `T`. |
-| `RS` | response | Residual stress σ~r~: normalized stress at the conclusion of the relaxation test (dimensionless). |
+| `RS` | response | Residual stress σ~r~ (dimensionless): the normalized stress still carried by the sponge when the relaxation test ends. |
 
 **Correspondence to the published results.** The additive models and ANOVA for Height,
 Diameter, Shrinkage and Density reproduce ACS Omega Table 1 and Tables S2–S5; the one-factor
@@ -115,14 +184,22 @@ boxplots of those variables correspond to ACS Omega Figure 5. The interaction mo
 Modulus, RS, T and Recovery reproduce Polymer Journal Table S2, the Spearman analysis
 corresponds to Polymer Journal Figure S6 (which uses the subset Modulus, RS, T, Recovery),
 and the Gibson–Ashby fit reproduces the scaling constants of Polymer Journal Figure 5b
-(C = 2.04, n = 2.48). The first-order response-surface model reproduces ACS Omega Table 2,
-Table S6 and Figure 6j. One caveat: the statistics involving `T` in Polymer Journal
-Table S2 and Figure S6 were derived from an earlier version of the Maxwell-fit parameters,
-so re-running the analysis on this final dataset yields slightly different values for that
-one variable (the qualitative conclusions are unchanged). Analyses beyond these — the
-Pearson panel, PCA, MANOVA, multi-response models, Box–Cox profiles and the second-order
-response surface — are exploratory work that supported, but did not appear in, the
-publications.
+(*C* = 2.04, *n* = 2.48). The first-order response-surface model reproduces ACS Omega Table 2,
+Table S6 and Figure 6j. One caveat concerns `T` (the characteristic relaxation time τ):
+the statistics for that variable in Polymer Journal Table S2 and Figure S6 came from an
+earlier version of the Maxwell-fit parameters, and re-running the analysis on this final
+dataset changes them noticeably. Most visibly, the published table reports a strongly
+significant suspension-concentration effect on τ, whereas on this dataset that effect
+weakens to the margin of significance: *P* = 0.051 in the additive model and 0.038 with
+the interaction included using the sequential (Type I) tests that match the published
+analysis, or 0.080 and 0.062 respectively under the order-adjusted Type II tests used in
+the cross-response summary later in this document — so it clears the 0.05 threshold in
+only one of the four specifications. The broader conclusions — ethanol lengthens relaxation, and
+the interaction is not significant — hold on both versions, and every other variable
+reproduces the published values. Analyses beyond these — the
+Pearson panel, PCA, MANOVA, ASCA, multi-response models, Box–Cox profiles and the
+second-order response surface — are exploratory work that supported, but did not appear
+in, the publications.
 
 # Study data
 
@@ -160,9 +237,25 @@ nips <- within(nips, EtOH <- relevel(EtOH, ref = 1))
 # Right: the same data standardised (z-scores), which makes spreads comparable
 # and helps to spot outliers on a common scale.
 resp_vars <- setdiff(names(nips), c("SUS", "EtOH"))
-boxplot(nips[, resp_vars], main = "Box plot — raw values")
-boxplot(scale(nips[, resp_vars], center = TRUE), main = "Box plot — standardised (z-scores)")
+par(cex.main = 1.4, font.lab = 2, cex.lab = 1.2)
+boxplot(nips[, resp_vars], main = "Box plot: raw values", ylab = "Raw value", col = "#C6DBEF", las = 2, cex.axis = 0.8)
+boxplot(scale(nips[, resp_vars], center = TRUE), main = "Box plot: standardized z-scores", ylab = "z-score", col = "#C6DBEF", las = 2, cex.axis = 0.8)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+The raw-scale panel mostly demonstrates how different the measurement
+scales are — `t3` and `T` span hundreds of seconds while Density and the stress parameters
+sit near zero — which is why the standardized panel is the more informative one. Note what
+standardizing does and does not do: it forces every variable to the same standard
+deviation, so box *widths* no longer say which response varies most. What they do reveal
+is distribution shape, since a box is wide relative to a now-fixed standard deviation when
+the data are spread towards the quartiles rather than concentrated in the middle — often
+the signature of several treatment groups sitting at different levels, as with Density and
+Modulus here. It is also the right mental model for the PCA later on, which likewise
+standardizes the variables before extracting components.
+:::
 
 # Distributional checks
 
@@ -193,7 +286,25 @@ shapiro.test(nips$t2)
 shapiro.test(nips$A3)
 shapiro.test(nips$t3)
 shapiro.test(nips$T)
+shapiro.test(nips$RS)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+At the 0.05 level, Weight, Density, Porosity, Modulus and most of the
+Maxwell parameters (`A0`–`A3`, `t1`, `t2`) depart significantly from normality, while
+Diameter, Height, Volume, Shrinkage, Recovery, `t3`, `T` and `RS` do not. Two details are worth
+noting. First, Density and Porosity return exactly the same statistic (*W* ≈ 0.908):
+Porosity is an affine transformation of Density, and the test is invariant to such
+transformations — the same happens for Volume and Shrinkage. Second, these are tests of
+the *marginal* distributions, which pool all nine treatment groups: a variable that
+responds strongly to SUS (such as Modulus) is a mixture of three well-separated groups,
+so its pooled distribution looks multimodal and "fails" normality even if the
+measurements within each condition are perfectly well behaved. The assumption that
+actually matters for the models below is normality of *residuals*, which is checked per
+model with the diagnostic plots.
+:::
 
 ## Normal Q–Q plots
 
@@ -202,29 +313,40 @@ consistent with normality; systematic curvature indicates skew, and points peeli
 the ends indicate heavy tails or outliers.
 
 ```{r qq-plots}
-par(mfrow = c(3, 6))   # 17 plots on a 3 × 6 grid
-qqnorm(nips$Weight, main = "Weight"); qqline(nips$Weight)
-qqnorm(nips$Diameter, main = "Diameter"); qqline(nips$Diameter)
-qqnorm(nips$Height, main = "Height"); qqline(nips$Height)
-qqnorm(nips$Volume, main = "Volume"); qqline(nips$Volume)
-qqnorm(nips$Density, main = "Density"); qqline(nips$Density)
-qqnorm(nips$Porosity, main = "Porosity"); qqline(nips$Porosity)
-qqnorm(nips$Shrinkage, main = "Shrinkage"); qqline(nips$Shrinkage)
-qqnorm(nips$Recovery, main = "Recovery"); qqline(nips$Recovery)
-qqnorm(nips$Modulus, main = "Modulus"); qqline(nips$Modulus)
-qqnorm(nips$A0, main = "A0"); qqline(nips$A0)
-qqnorm(nips$A1, main = "A1"); qqline(nips$A1)
-qqnorm(nips$t1, main = "t1"); qqline(nips$t1)
-qqnorm(nips$A2, main = "A2"); qqline(nips$A2)
-qqnorm(nips$t2, main = "t2"); qqline(nips$t2)
-qqnorm(nips$A3, main = "A3"); qqline(nips$A3)
-qqnorm(nips$t3, main = "t3"); qqline(nips$t3)
-qqnorm(nips$T, main = "T"); qqline(nips$T)
+par(mfrow = c(3, 6), cex.main = 1.6, font.axis = 2)   # 18 plots fill the 3 x 6 grid
+qqnorm(nips$Weight, main = "Weight"); qqline(nips$Weight, col = col_accent, lwd = 1.2)
+qqnorm(nips$Diameter, main = "Diameter"); qqline(nips$Diameter, col = col_accent, lwd = 1.2)
+qqnorm(nips$Height, main = "Height"); qqline(nips$Height, col = col_accent, lwd = 1.2)
+qqnorm(nips$Volume, main = "Volume"); qqline(nips$Volume, col = col_accent, lwd = 1.2)
+qqnorm(nips$Density, main = "Density"); qqline(nips$Density, col = col_accent, lwd = 1.2)
+qqnorm(nips$Porosity, main = "Porosity"); qqline(nips$Porosity, col = col_accent, lwd = 1.2)
+qqnorm(nips$Shrinkage, main = "Shrinkage"); qqline(nips$Shrinkage, col = col_accent, lwd = 1.2)
+qqnorm(nips$Recovery, main = "Recovery"); qqline(nips$Recovery, col = col_accent, lwd = 1.2)
+qqnorm(nips$Modulus, main = "Modulus"); qqline(nips$Modulus, col = col_accent, lwd = 1.2)
+qqnorm(nips$A0, main = "A0"); qqline(nips$A0, col = col_accent, lwd = 1.2)
+qqnorm(nips$A1, main = "A1"); qqline(nips$A1, col = col_accent, lwd = 1.2)
+qqnorm(nips$t1, main = "t1"); qqline(nips$t1, col = col_accent, lwd = 1.2)
+qqnorm(nips$A2, main = "A2"); qqline(nips$A2, col = col_accent, lwd = 1.2)
+qqnorm(nips$t2, main = "t2"); qqline(nips$t2, col = col_accent, lwd = 1.2)
+qqnorm(nips$A3, main = "A3"); qqline(nips$A3, col = col_accent, lwd = 1.2)
+qqnorm(nips$t3, main = "t3"); qqline(nips$t3, col = col_accent, lwd = 1.2)
+qqnorm(nips$T, main = "T"); qqline(nips$T, col = col_accent, lwd = 1.2)
+qqnorm(nips$RS, main = "RS"); qqline(nips$RS, col = col_accent, lwd = 1.2)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+The Q–Q panels tell the same story graphically: the variables flagged
+by the Shapiro–Wilk test (e.g. Modulus, `A0`) bend away from the reference line,
+consistent with the group-mixture explanation above, while variables such as Height,
+Recovery and Shrinkage track the line closely.
+:::
 
 ## Box–Cox transformation
 
-A complementary check on the distribution of each response. `boxcox()` profiles the
+A complementary check on the distribution of each modeled response (`Weight`, which
+enters the analysis only through Density = m/V, is omitted). `boxcox()` profiles the
 log-likelihood of the power-transformation parameter λ for the model `y^(λ) ~ 1`
 (λ = 1: no transformation needed; λ = 0: log transform; λ = −1: reciprocal). If the
 95% confidence interval around the peak includes 1, the untransformed variable is
@@ -233,32 +355,33 @@ adequate. Note that Box–Cox requires strictly positive data.
 ### Log-likelihood profiles
 
 ```{r boxcox-profiles}
-par(mfrow = c(3, 3))   # 16 profiles: rendered as two 3 × 3 pages
-boxcox(nips$Diameter ~ 1); mtext("Diameter", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Height ~ 1); mtext("Height", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Volume ~ 1); mtext("Volume", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Density ~ 1); mtext("Density", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Porosity ~ 1); mtext("Porosity", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Shrinkage ~ 1); mtext("Shrinkage", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Recovery ~ 1); mtext("Recovery", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$Modulus ~ 1); mtext("Modulus", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$A0 ~ 1); mtext("A0", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$A1 ~ 1); mtext("A1", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$A2 ~ 1); mtext("A2", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$A3 ~ 1); mtext("A3", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$t1 ~ 1); mtext("t1", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$t2 ~ 1); mtext("t2", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$t3 ~ 1); mtext("t3", side = 3, line = 1, at = 0, col = "blue", las = 1)
-boxcox(nips$T ~ 1); mtext("T", side = 3, line = 1, at = 0, col = "blue", las = 1)
+par(mfrow = c(3, 3))   # 17 profiles: rendered as two 3 x 3 pages
+boxcox(nips$Diameter ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Diameter", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Height ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Height", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Volume ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Volume", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Density ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Density", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Porosity ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Porosity", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Shrinkage ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Shrinkage", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Recovery ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Recovery", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Modulus ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Modulus", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A0 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A0", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$T ~ 1, lambda = seq(-8, 8, 0.1)); mtext("T", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$RS ~ 1, lambda = seq(-8, 8, 0.1)); mtext("RS", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
 ```
 
 ### Optimal λ per response
 
-The λ value that maximises each profile above, collected into a single table.
+The λ value that maximizes each profile above, collected into a single table.
 
 ```{r boxcox-lambda}
 boxcox_vars <- c("Diameter", "Height", "Volume", "Density", "Porosity", "Shrinkage",
-                 "Recovery", "Modulus", "A0", "A1", "A2", "A3", "t1", "t2", "t3", "T")
+                 "Recovery", "Modulus", "A0", "A1", "A2", "A3", "t1", "t2", "t3", "T", "RS")
 
 lambda_opt <- sapply(boxcox_vars, function(v) {
   # boxcox() refits the model internally, so the response must be reachable from the
@@ -266,14 +389,35 @@ lambda_opt <- sapply(boxcox_vars, function(v) {
   # interface (boxcox(y ~ 1)); boxcox(lm(nips[[v]] ~ 1)) breaks under knitting because
   # the refit cannot see `v`.
   y <- nips[[v]]
-  prof <- boxcox(y ~ 1, plotit = FALSE)
+  # The default search grid is lambda in [-2, 2]; several variables here peak outside it
+  # and would be silently reported at the boundary, so the grid is widened. Values still
+  # sitting at +/-8 below are bounds, not estimates.
+  prof <- boxcox(y ~ 1, lambda = seq(-8, 8, 0.1), plotit = FALSE)
   prof$x[which.max(prof$y)]     # λ at the log-likelihood maximum
 })
 
-kable(data.frame(Variable = names(lambda_opt), `Optimal lambda` = round(lambda_opt, 2),
+kable(data.frame(Variable = names(lambda_opt), `Optimal λ` = round(lambda_opt, 2),
                  check.names = FALSE),
       row.names = FALSE)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+The optimal λ varies enormously across responses, and for the stress
+quantities (Modulus, `A0`–`A3`) it sits near 0, i.e. a log transformation — unsurprising,
+since these variables grow multiplicatively with suspension concentration. A practical
+warning is embedded in this table: `boxcox()` searches λ ∈ [−2, 2] by default, and several
+of these variables peak outside that window, which the default would have reported as a
+neat "−2" or "+2" rather than as the boundary of the search. The grid is widened here, and
+any value still resting at the new limits should be read as a bound rather than an
+estimate. These profiles also share the caveat of the Shapiro–Wilk tests:
+they are computed on the pooled data (`y ~ 1`), so much of the apparent non-normality is
+the factorial design itself rather than skewness within conditions. The analyses in this
+document therefore stay on the original scales, where coefficients keep their physical
+units, and rely on per-model residual diagnostics; re-fitting the amplitude variables on
+a log scale is a sensible exercise for the interested reader.
+:::
 
 # Factor effects I: distributions by factor level
 
@@ -283,16 +427,7 @@ a glance.
 
 ```{r boxplot-theme}
 # Shared theme for all boxplot panels in this section (identical styling throughout).
-theme_box <- theme(
-  legend.title = element_text(size = 14, face = "bold.italic"),
-  legend.text = element_text(size = 13, face = "bold"),
-  axis.title = element_text(size = 15, face = "bold"),
-  axis.text = element_text(size = 14, face = "bold"),
-  plot.title = element_text(size = 15, face = "bold"),
-  panel.border = element_rect(fill = FALSE),
-  aspect.ratio = 1,
-  legend.position = "bottom"
-)
+theme_box <- theme_pub + theme(aspect.ratio = 1, legend.position = "bottom")
 ```
 
 ## One-factor boxplots
@@ -302,13 +437,15 @@ Each response against one factor at a time: panel A groups by `SUS`, panel B by 
 ### Diameter
 
 ```{r box1f-diameter}
-p1.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Diameter (mm)")
 
-p2.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Diameter (mm)")
 
 plot_grid(p1.1, p2.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -316,13 +453,15 @@ plot_grid(p1.1, p2.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Height
 
 ```{r box1f-height}
-p1.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Height (mm)")
 
-p2.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Height (mm)")
 
 plot_grid(p1.2, p2.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -330,13 +469,15 @@ plot_grid(p1.2, p2.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Volume
 
 ```{r box1f-volume}
-p1.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
 
-p2.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
 
 plot_grid(p1.3, p2.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -344,13 +485,15 @@ plot_grid(p1.3, p2.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Density
 
 ```{r box1f-density}
-p1.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
 
-p2.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
 
 plot_grid(p1.4, p2.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -358,13 +501,15 @@ plot_grid(p1.4, p2.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Porosity
 
 ```{r box1f-porosity}
-p1.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Porosity (%)")
 
-p2.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Porosity (%)")
 
 plot_grid(p1.5, p2.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -372,13 +517,15 @@ plot_grid(p1.5, p2.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Shrinkage
 
 ```{r box1f-shrinkage}
-p1.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Shrinkage (%)")
 
-p2.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Shrinkage (%)")
 
 plot_grid(p1.6, p2.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -386,13 +533,15 @@ plot_grid(p1.6, p2.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Recovery
 
 ```{r box1f-recovery}
-p1.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Recovery (%)")
 
-p2.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Recovery (%)")
 
 plot_grid(p1.7, p2.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -400,13 +549,15 @@ plot_grid(p1.7, p2.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Modulus
 
 ```{r box1f-modulus}
-p1.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
 
-p2.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
 
 plot_grid(p1.8, p2.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -414,13 +565,15 @@ plot_grid(p1.8, p2.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### A0
 
 ```{r box1f-a0}
-p1.9 <- ggplot(nips, aes(x = SUS, y = A0)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.9 <- ggplot(nips, aes(x = SUS, y = A0)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
 
-p2.9 <- ggplot(nips, aes(x = EtOH, y = A0)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.9 <- ggplot(nips, aes(x = EtOH, y = A0)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
 
 plot_grid(p1.9, p2.9, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -428,13 +581,15 @@ plot_grid(p1.9, p2.9, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### A1
 
 ```{r box1f-a1}
-p1.10 <- ggplot(nips, aes(x = SUS, y = A1)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.10 <- ggplot(nips, aes(x = SUS, y = A1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
 
-p2.10 <- ggplot(nips, aes(x = EtOH, y = A1)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.10 <- ggplot(nips, aes(x = EtOH, y = A1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
 
 plot_grid(p1.10, p2.10, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -442,13 +597,15 @@ plot_grid(p1.10, p2.10, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 ### t1
 
 ```{r box1f-t1}
-p1.11 <- ggplot(nips, aes(x = SUS, y = t1)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.11 <- ggplot(nips, aes(x = SUS, y = t1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
 
-p2.11 <- ggplot(nips, aes(x = EtOH, y = t1)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.11 <- ggplot(nips, aes(x = EtOH, y = t1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
 
 plot_grid(p1.11, p2.11, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -456,13 +613,15 @@ plot_grid(p1.11, p2.11, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 ### A2
 
 ```{r box1f-a2}
-p1.12 <- ggplot(nips, aes(x = SUS, y = A2)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.12 <- ggplot(nips, aes(x = SUS, y = A2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
 
-p2.12 <- ggplot(nips, aes(x = EtOH, y = A2)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.12 <- ggplot(nips, aes(x = EtOH, y = A2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
 
 plot_grid(p1.12, p2.12, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -470,13 +629,15 @@ plot_grid(p1.12, p2.12, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 ### t2
 
 ```{r box1f-t2}
-p1.13 <- ggplot(nips, aes(x = SUS, y = t2)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.13 <- ggplot(nips, aes(x = SUS, y = t2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
 
-p2.13 <- ggplot(nips, aes(x = EtOH, y = t2)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.13 <- ggplot(nips, aes(x = EtOH, y = t2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
 
 plot_grid(p1.13, p2.13, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -484,13 +645,15 @@ plot_grid(p1.13, p2.13, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 ### A3
 
 ```{r box1f-a3}
-p1.14 <- ggplot(nips, aes(x = SUS, y = A3)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.14 <- ggplot(nips, aes(x = SUS, y = A3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
 
-p2.14 <- ggplot(nips, aes(x = EtOH, y = A3)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.14 <- ggplot(nips, aes(x = EtOH, y = A3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
 
 plot_grid(p1.14, p2.14, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -498,13 +661,15 @@ plot_grid(p1.14, p2.14, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 ### t3
 
 ```{r box1f-t3}
-p1.15 <- ggplot(nips, aes(x = SUS, y = t3)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.15 <- ggplot(nips, aes(x = SUS, y = t3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
 
-p2.15 <- ggplot(nips, aes(x = EtOH, y = t3)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.15 <- ggplot(nips, aes(x = EtOH, y = t3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
 
 plot_grid(p1.15, p2.15, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -513,33 +678,37 @@ plot_grid(p1.15, p2.15, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 1
 
 ```{r box1f-bigT}
 # Note: inside aes(), `T` refers to the data column T (data masking), not to TRUE.
-p1.16 <- ggplot(nips, aes(x = SUS, y = T)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p1.16 <- ggplot(nips, aes(x = SUS, y = T)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
 
-p2.16 <- ggplot(nips, aes(x = EtOH, y = T)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p2.16 <- ggplot(nips, aes(x = EtOH, y = T)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
 
 plot_grid(p1.16, p2.16, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
 
 ## Two-factor boxplots
 
-Both factors shown at once: one factor on the x-axis, the other as the fill colour (and
+Both factors shown at once: one factor on the x-axis, the other as the fill color (and
 vice versa in the second panel). Parallel patterns across groups suggest additive effects;
 crossing patterns hint at an interaction.
 
 ### Diameter
 
 ```{r box2f-diameter}
-p3.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Diameter (mm)")
 
-p4.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Diameter (mm)")
 
 plot_grid(p3.1, p4.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -547,13 +716,15 @@ plot_grid(p3.1, p4.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Height
 
 ```{r box2f-height}
-p3.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Height (mm)")
 
-p4.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Height (mm)")
 
 plot_grid(p3.2, p4.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -561,13 +732,15 @@ plot_grid(p3.2, p4.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Volume
 
 ```{r box2f-volume}
-p3.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
 
-p4.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
 
 plot_grid(p3.3, p4.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -575,13 +748,15 @@ plot_grid(p3.3, p4.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Density
 
 ```{r box2f-density}
-p3.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
 
-p4.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
 
 plot_grid(p3.4, p4.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -589,13 +764,15 @@ plot_grid(p3.4, p4.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Porosity
 
 ```{r box2f-porosity}
-p3.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Porosity (%)")
 
-p4.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Porosity (%)")
 
 plot_grid(p3.5, p4.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -603,13 +780,15 @@ plot_grid(p3.5, p4.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Shrinkage
 
 ```{r box2f-shrinkage}
-p3.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Shrinkage (%)")
 
-p4.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Shrinkage (%)")
 
 plot_grid(p3.6, p4.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -617,13 +796,15 @@ plot_grid(p3.6, p4.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Recovery
 
 ```{r box2f-recovery}
-p3.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Recovery (%)")
 
-p4.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Recovery (%)")
 
 plot_grid(p3.7, p4.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -631,16 +812,36 @@ plot_grid(p3.7, p4.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ### Modulus
 
 ```{r box2f-modulus}
-p3.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = SUS), position = position_dodge(.8)) +
+p3.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
 
-p4.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = EtOH), position = position_dodge(.8)) +
+p4.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
   geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
-  theme_box
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
 
 plot_grid(p3.8, p4.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
+
+::: {.interpretation}
+**What the galleries show.**
+
+Reading the one-factor panels across the responses, the two
+factors divide the labor. Suspension concentration mainly sets *how much material* ends
+up in the sponge: Density and Modulus climb steeply with SUS, and the stress amplitudes
+`A0`–`A3` follow. Ethanol concentration mainly influences *how the structure forms during
+freezing*: Diameter increases and Shrinkage decreases with EtOH, and the relaxation-related
+quantities shown here (`T`, Recovery) shift upwards. (`RS` behaves the same way, but it has
+no panel in this gallery — the regression section quantifies it.) Height rises with both factors, although
+its EtOH trend falls short of significance in the model below (*P* = 0.066). In the
+two-factor panels, roughly parallel box patterns suggest additive behavior for most
+responses, whereas for Modulus the EtOH effect looks visibly different at each SUS level —
+anticipating the significant SUS × EtOH interaction found in the next part. The formal
+tests attach *P*-values to each of these impressions (the geometry responses are discussed
+in the ACS Omega paper, the mechanical ones in the Polymer Journal paper).
+:::
 
 # Factor effects II: regression & ANOVA
 
@@ -649,21 +850,29 @@ models on the factor version of the data.
 
 ## Per-response linear models & ANOVA
 
-Each response is modelled as `response ~ SUS + EtOH`, i.e. an additive two-factor model
+Each response is modeled as `response ~ SUS + EtOH`, i.e. an additive two-factor model
 with both factors categorical. For every response, four outputs are shown:
 
 - `summary()` — coefficient estimates (each level contrasted against the reference level),
-  their significance, and the model's R².
+  their significance, and the model's *R*².
 - `anova()` — the ANOVA table testing the overall effect of each factor.
 - The same two tables re-rendered with `tidy()`/`kable()` as compact, publication-ready
   tables.
 - Standard diagnostic plots (residuals vs fitted, normal Q–Q, scale–location, residuals vs
   leverage) to check the model assumptions.
 
+Two reading aids for the tables that follow. *Degrees of freedom*: each factor has three
+levels and therefore 2 df; the additive model leaves 40 − 1 − 2 − 2 = 35 residual df, and
+the interaction models add a 4-df `SUS:EtOH` term, leaving 31. *Coefficients*: with R's
+default treatment coding, a coefficient such as `SUS0.3` is the estimated difference
+between the 0.3 wt% group and the 0.24 wt% baseline at a fixed ethanol level, and the
+intercept is the predicted response at the two baselines together (SUS 0.24, EtOH
+0.2 wt%) — not the overall mean.
+
 For selected responses, a second model adds the `SUS:EtOH` interaction to test whether the
 effect of one factor depends on the level of the other. (In R's formula notation,
 `SUS + EtOH + SUS*EtOH` expands to main effects plus the interaction term — it is
-equivalent to `SUS*EtOH`.) The four responses analysed with interaction in the Polymer
+equivalent to `SUS*EtOH`.) The four responses analyzed with interaction in the Polymer
 Journal paper (Table S2) are Modulus, RS, T and Recovery; the additive models for Height,
 Diameter, Shrinkage and Density are the ones published in ACS Omega (Table 1, Tables S2–S5).
 
@@ -1042,6 +1251,80 @@ par(mfrow = c(2, 2))
 mod17a %>% plot()
 ```
 
+### Summary of the factor effects
+
+The individual ANOVA tables above are condensed here into one map: the additive-model
+*P*-values for both factors, and the model fit, across every response.
+
+```{r factor-effect-summary}
+resp_models <- list(
+  Diameter = mod1, Height = mod2, Volume = mod3, Density = mod4, Porosity = mod5,
+  Shrinkage = mod6, Recovery = mod7, Modulus = mod8, A0 = mod9, A1 = mod10, t1 = mod11,
+  A2 = mod12, t2 = mod13, A3 = mod14, t3 = mod15, T = mod16, RS = mod17)
+
+# Type II sums of squares (car::Anova) rather than the sequential Type I of anova():
+# the replicate counts are unequal (4-7 per cell), so the two factors are not quite
+# orthogonal and sequential tests would depend on the order of the terms — the factor
+# entered first would be credited with the shared variation. Type II tests each factor
+# adjusted for the other, which is what this side-by-side comparison needs.
+# (The individual tables above keep anova() so that they match the published analyses.)
+pmap <- t(sapply(resp_models, function(m) {
+  a <- car::Anova(m, type = 2)
+  c(a$`Pr(>F)`[1], a$`Pr(>F)`[2], summary(m)$r.squared)
+}))
+fmt_p <- function(p) ifelse(p < 1e-4, "< 0.0001", sprintf("%.4f", p))
+kable(data.frame(`SUS (*P*)` = fmt_p(pmap[, 1]), `EtOH (*P*)` = fmt_p(pmap[, 2]),
+                 `*R*²` = sprintf("%.3f", pmap[, 3]),
+                 row.names = rownames(pmap), check.names = FALSE),
+      align = "rrr")
+```
+
+::: {.interpretation}
+**Interpretation.**
+
+The map shows a broad division of roles. SUS governs the
+material-quantity side: Density, Porosity, Modulus and all four stress amplitudes
+`A0`–`A3` respond to it at *P* < 0.001 — more polymer per volume gives thicker cell walls
+and a stiffer network. The two-factor models explain these responses well (*R*² from 0.79
+for `A0` up to 0.96 for Modulus), with SUS carrying most of that on its own (for Modulus,
+*R*² = 0.92 from suspension concentration alone). EtOH governs the structure-formation
+side: Diameter, Volume/Shrinkage, Recovery and `RS` all move with ethanol at *P* < 0.05
+while showing no detectable SUS effect. Among the shape-related responses (Diameter,
+Height, Volume/Shrinkage), Height is the one driven primarily by SUS (*P* = 0.001). The
+relaxation timescales (`t3`, `T`) are the least determined of all: ethanol reaches
+significance (*P* ≈ 0.03) and SUS sits outside it (*P* ≈ 0.08), so neither factor controls
+them strongly — note that the Polymer Journal analysis, run on the earlier Maxwell-fit
+values of τ, found a clearly significant SUS effect there, one of the places where that
+earlier fit and this dataset differ.
+
+Two cautions on reading this table. First, the SUS column here uses Type II tests and therefore
+differs from the sequential (Type I) values printed in the individual tables above, which
+are kept in that form to match the published analyses; `T` is the clearest example (0.080
+here against 0.051 above). The EtOH column, by contrast, is identical in both — EtOH
+enters the sequential fits last, so its Type I sum of squares is already adjusted for
+SUS. That coincidence is itself a useful illustration of what "sequential" means. Second, these are 2-degree-of-freedom omnibus tests of a
+whole factor, whereas the published tables report individual level contrasts, which can
+reach significance when the omnibus test does not — the ethanol effect on Height is
+significant as the EtOH = 1 wt% contrast in ACS Omega Table S2 (*P* = 0.021) while the
+factor-level test here gives *P* = 0.066, because the omnibus test pools that contrast with
+the flat EtOH = 0.5 wt% one. The same applies to Shrinkage and Volume, where the whole-factor
+SUS test above reads *P* = 0.11 even though the SUS = 0.3 wt% contrast reaches *P* = 0.049 in
+ACS Omega Table S4 — so "no detectable SUS effect" in this table means no *whole-factor*
+effect, not the absence of any individual contrast. Neither analysis is wrong; they answer
+different questions, and the published tables report the contrasts.
+
+Two built-in identities are worth recognizing: Porosity is an affine transformation of
+Density, and Shrinkage of Volume, so each pair necessarily shares identical test results.
+
+Finally, the interaction models above add a refinement: Modulus (*P* = 0.0002) and the
+equilibrium stress `A0` (*P* = 0.001) show significant SUS × EtOH interactions, whereas
+Recovery, `RS`, `T` and the three relaxation times do not. For Modulus the interaction is
+easiest to read from the group means: raising ethanol from 0.2 to 0.5 wt% roughly halves the modulus
+at SUS 0.24 wt% (3.7 → 1.7 kPa) but leaves it essentially unchanged at SUS 0.4 wt%
+(10.6 → 10.5 kPa). In other words the ethanol penalty is not a fixed offset — thicker
+cell walls largely absorb it — which is precisely what an additive model cannot express.
+:::
+
 # Correlations between responses
 
 Pairwise associations between selected responses. Each panel figure shows scatter plots
@@ -1070,10 +1353,27 @@ pairs.panels(
   main = "Pearson_Correlation_Analysis",
   cex.main = 1.5,
   font.main = 2,
-  hist.col = 4,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
   stars = TRUE       # significance stars next to the coefficients
 )
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+Three blocks stand out. Density, Modulus and the stress quantities
+form a tightly linked group (Density–Modulus r = 0.96, Modulus–`A0` r = 0.87): the denser
+the sponge, the stiffer it is and the more stress every Maxwell branch carries. The three
+relaxation times form a second block (`t1`–`t2` and `t2`–`t3` both r = 0.83) that is only
+weakly and negatively related to the first (r between about −0.2 and −0.5): dense, stiff
+sponges tend to relax somewhat faster. And `T` is essentially collinear with `t3`
+(r = 1.00) — by construction, since T = t1 + t2 + t3 and t3 is two orders of magnitude
+larger than t1. Shrinkage and Recovery are only weakly correlated with the rest of the
+panel (|r| ≤ 0.33) — a first hint that resilience is not a by-product of stiffness.
+:::
 
 ## Spearman
 
@@ -1101,7 +1401,10 @@ pairs.panels(
   main = "Spearman_Correlation",
   cex.main = 1.5,
   font.main = 2,
-  hist.col = 8,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
   stars = TRUE
 )
 ```
@@ -1141,9 +1444,23 @@ write.csv(rounded_correlation_matrix, "spearman_correlation_matrix.csv")
 write.csv(rounded_p_matrix, "spearman_p_matrix.csv")
 ```
 
+::: {.interpretation}
+**Interpretation.**
+
+On ranks, the same structure appears — Density–Modulus ρ = 0.93,
+Modulus–`A0` ρ = 0.84 — plus one relation the Pearson view understates: Recovery
+correlates positively with `T` (ρ = 0.48) even though it is unrelated to Modulus
+(ρ = −0.09). Slower-relaxing sponges recover more of their height after prolonged
+compression, while stiffness buys no resilience at all; the Polymer Journal paper builds
+on exactly this contrast (its Figure S6 uses the subset Modulus, `RS`, `T`, Recovery,
+within which the strongest link is Recovery–`RS`, ρ = 0.82 — `RS` is not part of the
+panel printed above). The exported CSV files contain this matrix together with the
+matching *P*-values.
+:::
+
 # Multivariate analysis
 
-The responses are interrelated, so this part analyses them jointly: principal component
+The responses are interrelated, so this part analyzes them jointly: principal component
 analysis condenses the eight mechanical variables into a few uncorrelated components,
 multi-response regression and MANOVA test the factor effects on several responses at
 once, and the component scores themselves are regressed on the factors.
@@ -1153,7 +1470,7 @@ once, and the component scores themselves are regressed on the factors.
 Principal component analysis of the **mechanical/stress-relaxation variables** (modulus plus
 the exponential-fit parameters). PCA re-expresses the correlated variables as a small number
 of uncorrelated components, revealing which properties vary together and how the samples
-separate by processing condition. Variables are standardised internally by `PCA()`.
+separate by processing condition. Variables are standardized internally by `PCA()`.
 
 ```{r pca-fit}
 # Variables entering the PCA (8 variables → at most 8 components).
@@ -1182,55 +1499,48 @@ coord_ind <- as.data.frame(res.pca[["ind"]][["coord"]])
 coord_ind
 ```
 
+::: {.interpretation}
+**Interpretation.**
+
+The mechanical variables are highly redundant: the first component
+alone explains 65.8% of their joint variance and the first two explain 89.2%, so eight
+measured quantities effectively carry about two independent pieces of information. The
+near-zero last components (below 0.1%) are the flip side of the same redundancy, and part
+of it is built in rather than discovered — see the PC7/PC8 diagnostic below. The
+variable coordinates show what the two big components mean: all five stress quantities
+point the same way on Dim.1 (Modulus 0.94, `A1` 0.96, `A2` 0.93, `A3` 0.92, `A0` 0.75),
+while the relaxation times split between a negative share of Dim.1 and the bulk of Dim.2
+(0.61–0.75) — in short, a "how strong" axis and a "how slow" axis.
+:::
+
 ### Scree plot and variable map
 
 The scree plot shows how much variance each component explains — components before the
-"elbow" summarise most of the structure. The variable correlation plot (loading map) places
+"elbow" summarize most of the structure. The variable correlation plot (loading map) places
 each variable by its correlation with PC1 and PC2; variables pointing the same way are
-positively correlated, and colour encodes representation quality (cos²). The contribution
+positively correlated, and color encodes representation quality (cos²). The contribution
 bar charts identify which variables define each of the first three components (the dashed
 line marks the contribution expected if all variables contributed equally).
 
 ```{r pca-plot-objects}
 # Build the PCA summary plots; they are arranged into panels in the next two chunks.
-a1 <- fviz_eig(res.pca, addlabels = TRUE, ylim = c(1, 90),
+a1 <- fviz_eig(res.pca, addlabels = TRUE, barfill = col_bar, barcolor = col_bar, ylim = c(1, 90),
                title = "Scree plot", ylab = "Explained variances (%)") +
-  theme(
-    axis.title = element_text(size = 14, face = "bold"),
-    axis.text = element_text(size = 11, face = "bold"),
-    plot.title = element_text(size = 16, face = "bold"),
-    panel.border = element_rect(fill = FALSE),
-    legend.text = element_text(size = 15, face = "bold"),
-    aspect.ratio = 1.7,
-  )
+  theme_pub + theme(aspect.ratio = 1.7)
 
 b1 <- fviz_pca_var(res.pca,
                    title = "Variables \ncorrelation plot",
                    col.var = "cos2",
-                   gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+                   gradient.cols = c("#C6DBEF", "#2171B5", "#08306B"),
                    repel = TRUE,
                    arr.width = 25,) +
-  theme(
-    axis.title = element_text(size = 14, face = "bold"),
-    axis.text = element_text(size = 11, face = "bold"),
-    plot.title = element_text(size = 16, face = "bold"),
-    legend.title = element_text(size = 15, face = "bold"),
-    legend.text = element_text(size = 15, face = "bold"),
-    aspect.ratio = 1,
-  )
+  theme_pub + theme(aspect.ratio = 1)
 
 # Shared theme for the three per-dimension contribution charts.
-theme_contrib <- theme(
-  axis.title = element_text(size = 14, face = "bold"),
-  axis.text = element_text(size = 12, face = "bold"),
-  plot.title = element_text(size = 16, face = "bold"),
-  panel.border = element_rect(fill = FALSE),
-  legend.text = element_text(size = 15, face = "bold"),
-  aspect.ratio = 1.8,
-)
-c1 <- fviz_contrib(res.pca, choice = "var", axes = 1, title = "Contribution \nDim1") + theme_contrib
-d1 <- fviz_contrib(res.pca, choice = "var", axes = 2, title = "Contribution \nDim2") + theme_contrib
-e1 <- fviz_contrib(res.pca, choice = "var", axes = 3, title = "Contribution \nDim3") + theme_contrib
+theme_contrib <- theme_pub + theme(aspect.ratio = 1.8)
+c1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 1, title = "Contribution \nDim1") + theme_contrib
+d1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 2, title = "Contribution \nDim2") + theme_contrib
+e1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 3, title = "Contribution \nDim3") + theme_contrib
 ```
 
 ```{r pca-scree-loadings}
@@ -1243,35 +1553,32 @@ plot_grid(c1, d1, e1, ncol = 3, nrow = 1, labels = c("A", "B", "C"), label_size 
           rel_widths = c(1, 1), rel_heights = c(1, 1))
 ```
 
+::: {.interpretation}
+**Interpretation.**
+
+The scree plot's elbow after the second component confirms that two
+dimensions suffice. The contribution bars make the axis meanings precise: Dim.1 is built
+almost evenly from the five stress quantities (about 11–18% each), Dim.2 is dominated by
+the three relaxation times (`t2` 30%, `t1` 26%, `t3` 20%), and Dim.3 — already minor at
+6.8% — is essentially the equilibrium stress `A0` (49%), the one stress parameter that
+carries some information independent of the others.
+:::
+
 ### Biplots
 
 Each biplot overlays the samples (points, scored on the components) with the variable
 loadings (arrows). Points close together are samples with similar mechanical profiles;
 a sample lying in the direction of an arrow has a high value of that variable. The same
-plot is drawn twice — coloured by `SUS` (panel A) and by `EtOH` (panel B) — with 95%
-concentration ellipses per group, to show which factor drives the separation.
+plot is drawn twice — colored by `SUS` (panel A) and by `EtOH` (panel B) — with 95%
+concentration ellipses per group, to show which factor drives the separation. (These are
+*data* ellipses — regions expected to contain about 95% of each group's samples under a
+normal model — not confidence regions for the group means, which would be far tighter;
+overlapping data ellipses are therefore compatible with clearly separated means.)
 
 ```{r pca-theme-defs}
 # Shared themes for the biplot figures below (values identical across panels).
-theme_biplot <- theme(          # side-by-side biplot pairs
-  legend.title = element_text(size = 14, face = "bold.italic"),
-  legend.text = element_text(size = 13, face = "bold"),
-  axis.title = element_text(size = 15, face = "bold"),
-  axis.text = element_text(size = 14, face = "bold"),
-  plot.title = element_text(size = 16, face = "bold"),
-  panel.border = element_rect(fill = FALSE),
-  aspect.ratio = .6,
-  legend.position = "bottom"
-)
-theme_biplot_lab <- theme(      # single, sample-labelled biplots
-  legend.title = element_text(size = 14, face = "bold.italic"),
-  legend.text = element_text(size = 13, face = "bold"),
-  axis.title = element_text(size = 15, face = "bold"),
-  axis.text = element_text(size = 13, face = "bold"),
-  plot.title = element_text(size = 15, face = "bold"),
-  panel.border = element_rect(fill = FALSE),
-  aspect.ratio = .65
-)
+theme_biplot     <- theme_pub + theme(aspect.ratio = .6, legend.position = "bottom")
+theme_biplot_lab <- theme_pub + theme(aspect.ratio = .65)
 ```
 
 #### Biplot: PC1 vs PC2
@@ -1289,12 +1596,12 @@ a2 <- fviz_pca_biplot(
   addEllipses = TRUE,          # 95% concentration ellipse per group
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "SUS\n (%)"),
+  legend.title = list(fill = "SUS\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_sus + scale_sus_line
 
 b2 <- fviz_pca_biplot(
   title = "PCA biplot",
@@ -1308,15 +1615,27 @@ b2 <- fviz_pca_biplot(
   addEllipses = TRUE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "EtOH"),
+  legend.title = list(fill = "EtOH\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_etoh + scale_etoh_line
 
 plot_grid(a2, b2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+The samples order themselves along Dim.1 by suspension concentration
+(panel A), with the 0.24 wt% group on the low-stress side and the 0.4 wt% group on the
+high-stress side, whereas the EtOH groups (panel B) overlap substantially. The overlap is
+a matter of effect size rather than direction: both factors shift samples along the same
+Dim.1 axis, but the SUS group means span about 4.8 score units against roughly 1.8 for
+EtOH, so the ethanol ellipses sit inside one another instead of separating. Neither factor
+moves samples much along Dim.2. The score regressions below put numbers on this.
+:::
 
 #### Biplot: PC1 vs PC3
 
@@ -1333,12 +1652,12 @@ a3 <- fviz_pca_biplot(
   addEllipses = TRUE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "SUS\n (%)"),
+  legend.title = list(fill = "SUS\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_sus + scale_sus_line
 
 b3 <- fviz_pca_biplot(
   title = "PCA biplot",
@@ -1352,12 +1671,12 @@ b3 <- fviz_pca_biplot(
   addEllipses = TRUE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "EtOH\n (%)"),
+  legend.title = list(fill = "EtOH\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_etoh + scale_etoh_line
 
 plot_grid(a3, b3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
@@ -1377,12 +1696,12 @@ a4 <- fviz_pca_biplot(
   addEllipses = TRUE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "SUS\n (%)"),
+  legend.title = list(fill = "SUS\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_sus + scale_sus_line
 
 b4 <- fviz_pca_biplot(
   title = "PCA biplot",
@@ -1396,19 +1715,19 @@ b4 <- fviz_pca_biplot(
   addEllipses = TRUE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "EtOH\n (%)"),
+  legend.title = list(fill = "EtOH\n (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot
+  theme_biplot + scale_etoh + scale_etoh_line
 
 plot_grid(a4, b4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
 ```
 
 #### Biplot: PC1 vs PC2 with sample labels
 
-Same projection as above, but each point is labelled with its sample ID (the `ID` column,
+Same projection as above, but each point is labeled with its sample ID (the `ID` column,
 kept as row names on import) — useful for identifying individual samples and outliers.
 
 ```{r pca-biplot-12-labels-sus}
@@ -1424,12 +1743,12 @@ fviz_pca_biplot(
   addEllipses = FALSE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "SUS (%)"),
+  legend.title = list(fill = "SUS (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot_lab
+  theme_biplot_lab + scale_sus
 ```
 
 ```{r pca-biplot-12-labels-etoh}
@@ -1445,19 +1764,26 @@ fviz_pca_biplot(
   addEllipses = FALSE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "EtOH (%)"),
+  legend.title = list(fill = "EtOH (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot_lab
+  theme_biplot_lab + scale_etoh
 ```
 
 #### Biplot: PC7 vs PC8
 
 Diagnostic view of the two **last** components. These carry almost no variance; a
 near-zero component corresponds to an almost exact linear dependency among the variables,
-so this plot mainly serves as a check on redundancy/collinearity in the variable set.
+so this plot mainly serves as a check on redundancy/collinearity in the variable set. Here
+it finds something concrete: the final component is dominated by Modulus and the stress
+amplitudes, and indeed Modulus is very nearly a fixed multiple of `A0` + `A1` + `A2` + `A3`
+(r = 0.996). That is expected from how the quantities are defined — the equilibrium and branch
+stresses together make up the total stress carried at the start of relaxation,
+σ(0) = σ~e~ + σ~1~ + σ~2~ + σ~3~ — but it means part of the
+redundancy reported by the PCA is structural rather than an empirical finding about the
+sponges.
 
 ```{r pca-biplot-78}
 fviz_pca_biplot(
@@ -1472,12 +1798,12 @@ fviz_pca_biplot(
   addEllipses = FALSE,
   col.var = "black",
   arr.width = 25,
-  legend.title = list(fill = "SUS (%)"),
+  legend.title = list(fill = "SUS (wt%)"),
   mean.point = FALSE,
   repel = TRUE,
   ) +
   guides(fill = guide_legend(order = 1), color = "none") +
-  theme_biplot_lab
+  theme_biplot_lab + scale_sus
 ```
 
 ## Multi-response (multivariate) regression & ANOVA
@@ -1487,7 +1813,9 @@ Here several responses are fitted **jointly** against the same predictors with
 but `anova()` on a multi-response fit performs multivariate (MANOVA-type) tests, taking the
 correlations between the responses into account.
 
-### lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH)
+### Four responses jointly: additive model
+
+Model: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH)`
 
 ```{r mlm-additive}
 mod2.1 <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH, data = nips)
@@ -1497,7 +1825,9 @@ mod2.1 %>% tidy() %>% kable(digits = 3)
 mod2.1 %>% anova %>% kable(digits = 3)
 ```
 
-### lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH + SUS\*EtOH)
+### Four responses jointly: with interaction
+
+Model: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS * EtOH)`
 
 ```{r mlm-interaction}
 mod2.1a <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH + SUS*EtOH, data = nips)
@@ -1507,13 +1837,27 @@ mod2.1a %>% tidy() %>% kable(digits = 3)
 mod2.1a %>% anova %>% kable(digits = 3)
 ```
 
+::: {.interpretation}
+**Interpretation.**
+
+The coefficient estimates are identical to those of the separate
+per-response fits — fitting responses jointly does not change least squares — but the
+`anova()` table now tests each factor's effect on all four responses *at once*, taking
+their correlations into account. Both factors are clearly significant in the joint test
+(additive model: SUS Pillai ≈ 1.00, *P* ≈ 10⁻⁷; EtOH Pillai ≈ 0.79, *P* ≈ 3 × 10⁻⁵). The
+value of the multivariate formulation is protection against cherry-picking: one overall
+test per factor instead of four separate ones.
+:::
+
 ## Regression & ANOVA on principal-component scores
 
-Instead of modelling each variable separately, the first PCA scores are used as *composite*
-responses: Dim.1 and Dim.2 summarise the joint variation of all eight mechanical variables,
+Instead of modeling each variable separately, the first PCA scores are used as *composite*
+responses: Dim.1 and Dim.2 summarize the joint variation of all eight mechanical variables,
 so factor effects on the scores indicate effects on the overall mechanical profile.
 
-### lm(cbind(Dim.1, Dim.2) ~ SUS + EtOH + SUS\*EtOH)
+### Both component scores jointly: with interaction
+
+Model: `lm(cbind(Dim.1, Dim.2) ~ SUS * EtOH)`
 
 ```{r pca-scores-mlm}
 # Sample scores on the principal components, from the PCA fitted above.
@@ -1526,7 +1870,9 @@ mod3.1 %>% tidy() %>% kable(digits = 3)
 mod3.1 %>% anova %>% kable(digits = 3)
 ```
 
-### lm(Dim.1 ~ SUS + EtOH)
+### The stiffness axis (Dim.1): additive model
+
+Model: `lm(Dim.1 ~ SUS + EtOH)`
 
 ```{r pca-scores-dim1}
 mod3.2 <- lm(score$Dim.1 ~ SUS + EtOH, data = nips)
@@ -1541,7 +1887,23 @@ par(mfrow = c(2, 2))
 mod3.2 %>% plot()
 ```
 
-### lm(Dim.1 ~ SUS + EtOH + SUS\*EtOH)
+### The timescale axis (Dim.2): additive model
+
+Model: `lm(Dim.2 ~ SUS + EtOH)`
+
+The same additive model applied to the second component, for comparison with Dim.1 above.
+
+```{r pca-scores-dim2}
+mod3.2b <- lm(score$Dim.2 ~ SUS + EtOH, data = nips)
+mod3.2b %>% summary()
+mod3.2b %>% anova()
+mod3.2b %>% tidy() %>% kable(digits = 3)
+mod3.2b %>% anova %>% kable(digits = 3)
+```
+
+### The stiffness axis (Dim.1): with interaction
+
+Model: `lm(Dim.1 ~ SUS * EtOH)`
 
 ```{r pca-scores-dim1-int}
 mod3.3 <- lm(score$Dim.1 ~ SUS + EtOH + SUS*EtOH, data = nips)
@@ -1555,6 +1917,19 @@ mod3.3 %>% anova %>% kable(digits = 3)
 par(mfrow = c(2, 2))
 mod3.3 %>% plot()
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+Treating the component scores as responses compresses eight ANOVAs
+into two. Dim.1 — the overall stress level — is strongly determined by the fabrication
+factors (*R*² = 0.86): suspension concentration is the dominant term (*P* < 0.001) and ethanol
+a clear secondary one (*P* < 0.001), acting on the same axis with a smaller effect. Dim.2 —
+the relaxation-time axis — is much harder to steer: a weak SUS effect (*P* = 0.036) and no
+detectable ethanol effect (*P* = 0.407). So the factors move sponges a long way along the
+stiffness axis and only slightly along the timescale axis, and the levers are not
+cleanly separated: both act mainly on the same first component.
+:::
 
 ## MANOVA
 
@@ -1605,6 +1980,114 @@ mod5.1 %>% summary.aov()
 mod5.1 %>% tidy() %>% kable(digits = 3)
 ```
 
+::: {.interpretation}
+**Interpretation.**
+
+Both factors significantly shift the joint mean vector of the eight
+mechanical variables: SUS with Pillai = 1.14 (*P* ≈ 10⁻⁶) and EtOH with Pillai = 0.68
+(*P* = 0.027). All four test statistics lead to the same conclusion for each factor, which
+is precisely the robustness check they are printed for. The contrast in strength mirrors
+everything above — suspension concentration is the primary mechanical lever, ethanol the
+secondary one — and the univariate follow-ups identify which individual variables carry
+each joint effect. One caveat on how these two tests are built: each is a separate
+one-way MANOVA, so neither factor is adjusted for the other. The large SUS effect
+therefore stays inside the residual variation of the EtOH model, which makes the ethanol
+test conservative. The two-factor multi-response model above improves on this only
+partly — `anova()` on a multivariate fit is also sequential, so there EtOH is adjusted for
+SUS but SUS is not adjusted for EtOH. Both routes reach the same conclusion here, and for
+a fully order-free multivariate test `car::Anova(mod2.1, type = 2)` is the tool to reach
+for.
+:::
+
+## ASCA: partitioning the multivariate variation
+
+ANOVA–simultaneous component analysis (ASCA) ties the two threads of this part together.
+Like the MANOVA, it asks how much of the multivariate variation each design term is
+responsible for; like the PCA, it then looks *inside* each term's share with a component
+decomposition. The autoscaled data matrix is split into additive effect matrices built
+from the level means — one for SUS, one for EtOH, one for their interaction — plus a
+residual matrix; each effect matrix gets a sum of squares (its share of the total
+variation) and its own PCA. Significance is assessed by permutation: the condition labels
+are reshuffled across sponges (jointly, so the cell sizes stay intact) and the observed
+sums of squares are compared with the reshuffled distribution. The implementation is
+written out in full below rather than imported from a package, so every step can be
+followed and modified.
+
+```{r asca-analysis}
+set.seed(1234)
+X <- scale(as.matrix(nips[, vars_pca]))   # autoscaled mechanical variables (40 x 8)
+
+# Effect matrices from level means (the grand mean is 0 after autoscaling).
+asca_decomp <- function(a, b) {
+  Ma <- apply(X, 2, ave, a)
+  Mb <- apply(X, 2, ave, b)
+  Mi <- apply(X, 2, ave, interaction(a, b)) - Ma - Mb
+  list(Ma = Ma, Mb = Mb, Mi = Mi,
+       ssq = c(`SUS` = sum(Ma^2), `EtOH` = sum(Mb^2), `SUS x EtOH` = sum(Mi^2)))
+}
+obs <- asca_decomp(nips$SUS, nips$EtOH)
+resid_ssq <- sum((X - obs$Ma - obs$Mb - obs$Mi)^2)
+
+# Permutation test: reshuffle which sponge received which condition (the SUS/EtOH
+# label pairs are permuted jointly, so the design's cell sizes are preserved).
+n_perm <- 2000
+perm <- replicate(n_perm, {
+  i <- sample(nrow(X))
+  asca_decomp(nips$SUS[i], nips$EtOH[i])$ssq
+})
+p_perm <- (rowSums(perm >= obs$ssq) + 1) / (n_perm + 1)
+
+kable(data.frame(
+  Effect = c(names(obs$ssq), "Residual"),
+  `Sum of squares` = round(c(obs$ssq, resid_ssq), 1),
+  `Share of total (%)` = round(100 * c(obs$ssq, resid_ssq) / sum(X^2), 1),
+  `Permutation *P*` = c(ifelse(p_perm < 0.001, "< 0.001", sprintf("%.3f", p_perm)), ""),
+  check.names = FALSE), row.names = FALSE)
+```
+
+```{r asca-effect-pca}
+# PCA of each main-effect matrix: with three levels an effect matrix has rank two,
+# and its first component tells us what kind of mechanical change the factor produces.
+effect_pc1 <- function(M) {
+  sv <- svd(M)
+  list(share = sv$d[1]^2 / sum(sv$d^2), loading = setNames(sv$v[, 1], colnames(X)))
+}
+pc_sus <- effect_pc1(obs$Ma); pc_etoh <- effect_pc1(obs$Mb)
+cat(sprintf("SUS-effect PC1 carries %.1f%% of the SUS effect; loadings:\n", 100 * pc_sus$share))
+round(pc_sus$loading, 2)
+cat(sprintf("EtOH-effect PC1 carries %.1f%% of the EtOH effect; loadings:\n", 100 * pc_etoh$share))
+round(pc_etoh$loading, 2)
+```
+
+::: {.interpretation}
+**Interpretation.**
+
+The decomposition puts one number on what this whole part has been
+showing: suspension concentration owns a little over half of the total variation in the
+eight mechanical variables (≈ 56%, permutation *P* < 0.001), while ethanol's share (≈ 10%)
+is of the same order as the interaction (≈ 8%) and both are dwarfed by the residual
+(≈ 29%). Notice that ethanol does *not* clear this permutation test (*P* ≈ 0.09) even
+though the MANOVA declared it significant. That is not a contradiction but a difference
+in the question asked: the ASCA test asks whether ethanol's share of raw variation
+exceeds chance, whereas the MANOVA weighs the effect against the residual covariance —
+a sharper instrument when a large competing effect (here SUS) inflates the total. A
+bookkeeping note: with unequal replicate counts the effect matrices are not exactly
+orthogonal, so the shares add to slightly more than 100% (by about 2%) — the same
+unbalance that motivated the Type II tests earlier.
+
+The effect-level PCAs then compress each factor's action to essentially one direction —
+PC1 carries 97–98% of either effect matrix, meaning the three level means lie almost
+on a line in the eight-dimensional response space. The SUS direction loads all five
+stress quantities together, with weak opposite loadings on the relaxation times: raising
+the suspension concentration raises every stress parameter and mildly shortens the
+timescales — the Dim.1 story of the global PCA restated as a design effect. The ethanol
+direction is the more distinctive one: it pairs the stress amplitudes and the relaxation
+times with *opposite* signs, so moving from 0.2 to 1 wt% ethanol slides sponges along a
+single latent axis toward lower stress amplitudes *and* longer relaxation times. That is
+ethanol's softer-but-slower signature — which the univariate models could only describe
+one response at a time — captured as one direction in response space.
+:::
+
 # Response-surface analysis (continuous factors)
 
 Everywhere above, `SUS` and `EtOH` are treated as categorical design levels. This part
@@ -1618,24 +2101,48 @@ its coefficients appear there as Table 2, its ANOVA (including the lack-of-fit t
 Table S6, and its contour plot as Figure 6j. The RSM prediction was validated with three
 additional sponges fabricated at EtOH = 3 wt% (one per SUS level; ACS Omega SI Table S1,
 rows 43–45; provided here as `NIPS_validation.csv`):
-the SUS 0.4 / EtOH 3 sponge showed 49.4% shrinkage, consistent with the predicted trend.
+the three sponges measured 49–56% shrinkage against 46–48% predicted by the plane, closest
+at SUS 0.4 wt% (49.4% against 46.4%). The "Which model extrapolates?" section below examines
+that comparison properly.
 The second-order model and canonical analysis are exploratory extensions beyond the
-published analysis.
+published analysis, and the extrapolation test below shows why the plane, not the
+curved surface, is the model to trust outside the design region.
 
 ## First-order (FO) model
 
 `FO(SUS, EtOH)` fits a first-order response surface — a plane over the two factors. The
 `summary()` includes a lack-of-fit test, which indicates whether this simple plane is
-adequate or whether curvature (a second-order model) is needed. The predictors enter in
+adequate or whether curvature (a second-order model) is needed. The test exploits the
+replicates: sponges fabricated at identical conditions scatter around their own condition
+mean, giving a model-free noise estimate (*pure error*), while the nine condition means
+scatter around the fitted plane (*lack of fit*); the plane is called into question only
+when the second kind of scatter clearly exceeds the first. The predictors enter in
 their original units (uncoded), so coefficients are interpretable directly on the
 concentration scales. The coefficient table equals ACS Omega Table 2, and the ANOVA block
-of the summary equals Table S6 (model P = 0.011; lack of fit insignificant, P = 0.260).
+of the summary equals Table S6 (model *P* = 0.011; lack of fit insignificant, *P* = 0.260).
 
 ```{r rsm-fo-fit}
 rsm1 <- rsm(Shrinkage ~ FO(SUS, EtOH), data = dat)
 summary(rsm1)
 rsm1 %>% tidy() %>% kable(digits = 3)
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+On the fitted plane, shrinkage falls by about 3.8 percentage points
+per 1 wt% of ethanol (*P* = 0.005), while the SUS slope (−8.9 per wt%, i.e. only about
+−1.4 points across the narrow 0.24–0.4 wt% range) is not statistically distinguishable
+from zero (*P* = 0.176). The ANOVA block is as informative as the coefficients: the model
+is significant (*P* = 0.011) while the lack-of-fit test is not (*P* = 0.260) — the replicate
+data inside the design region give no evidence *against* a plane. Read that as a failure
+to reject rather than proof of adequacy: with 6 and 31 degrees of freedom the test has
+limited power, and the model accounts for only about 22% of the variance in shrinkage
+(*R*² = 0.216), so a good deal of sample-to-sample variation remains unexplained. The test
+also says nothing about behavior outside the tested range; the EtOH = 3 wt% sponges are
+genuine extrapolation, and how they compare with this plane is assessed on its own terms
+later in this part — one of the three lands close, the other two are 7.5–8.5 points off.
+:::
 
 ### Contour plot of the fitted plane
 
@@ -1644,9 +2151,11 @@ Filled contour map of predicted Shrinkage. The red rectangle marks the experimen
 and should be read with caution.
 
 ```{r rsm-fo-contour}
-contour(rsm1, ~ SUS + EtOH, image = TRUE, bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
-        zlim = c(40, 60), decode = FALSE)
-lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = "red")  # design region
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm1, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
 ```
 
 ## Second-order (SO) model & canonical analysis
@@ -1662,38 +2171,128 @@ rsm2 <- rsm(Shrinkage ~ SO(SUS, EtOH), data = dat)
 canonical(rsm2, threshold = 0)
 ```
 
-### Contour plot with the steepest-descent path
+Eigenvalues are scale-dependent — they are second derivatives of the surface, in units
+of the response per squared predictor unit — so on the raw wt% scales the two are not
+comparable: SUS is varied over a range five times narrower than EtOH, which inflates its
+apparent curvature by a factor of about 25. Refitting on **coded** factors — each scaled
+so that the design range runs from −1 to +1 — removes that artifact and is the standard
+way to read a canonical analysis.
 
-The blue circles trace the **path of steepest descent** — the direction along which
-predicted Shrinkage decreases fastest from the stationary point (marked with a distinct
-symbol at distance 0). The filled blue square highlights the validation condition
-SUS = 0.4 wt%, EtOH = 3 wt%, where a fabricated sponge showed 49.4% shrinkage, consistent
-with the predicted trend. The red rectangle is again the design region.
-
-```{r rsm-so-contour-path}
-contour(rsm2, EtOH ~ SUS, image = TRUE, bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
-        zlim = c(30, 80), decode = FALSE)
-lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = "red")  # design region
-points(EtOH ~ SUS, data = canonical.path(rsm2, descent = TRUE, threshold = 0),
-       col = "blue", pch = 1 + 6*(dist == 0))   # pch 7 marks the stationary point (dist == 0)
-points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "blue")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+```{r rsm-so-coded}
+# Code both factors to [-1, +1] over their design ranges: SUS 0.24-0.4, EtOH 0.2-1 wt%.
+dat_coded <- coded.data(dat, x1 ~ (SUS - 0.32)/0.08, x2 ~ (EtOH - 0.6)/0.4)
+rsm2c <- rsm(Shrinkage ~ SO(x1, x2), data = dat_coded)
+summary(rsm2c)
+canonical(rsm2c, threshold = 0)
 ```
 
-### Contour plot centred at the stationary point
+::: {.interpretation}
+**Interpretation.**
+
+Both eigenvalues are positive, so the fitted quadratic has a minimum
+at the stationary point, located at roughly SUS 0.35 wt%, EtOH 0.90 wt% — that is, inside
+the design region rather than at an optimum beyond it. The uncoded eigenvalues (≈ 247 and
+≈ 8) look wildly unequal, but that ratio is almost entirely the unit mismatch just
+described: on coded factors they become ≈ 1.7 and ≈ 1.2. This is a useful general lesson —
+never compare the magnitudes of canonical eigenvalues computed from uncoded predictors,
+because the factor varied over the narrower range will always appear to dominate.
+
+The bigger caveat is that none of this is statistically resolved. The coded summary shows
+that no quadratic or interaction term is significant (`x1^2` *P* = 0.12, `x2^2` *P* = 0.21,
+`x1:x2` *P* = 0.49), so the shape being described — the sign of the eigenvalues, hence
+whether this is a bowl or a saddle, and where the stationary point sits — rests on
+coefficients that the data do not distinguish from zero. With only three levels per factor
+a full quadratic sits at the edge of what the design can support, and neither the
+first-order lack-of-fit test nor the quadratic terms themselves give any evidence that the
+extra curvature was needed. Read the
+canonical analysis here as an illustration of the method rather than a finding about these
+sponges; the comparison below shows what happens when it is taken literally.
+:::
+
+### Contour plot with the canonical path
+
+The blue circles trace the canonical path returned by `canonical.path()`, walking outwards
+from the stationary point (the distinct symbol at distance 0) along the axis of *least*
+curvature. The function is called with `descent = TRUE`, but on this surface nothing
+actually descends: because both eigenvalues are positive the stationary point is a
+minimum, so predicted shrinkage rises in every direction away from it — gently along this
+path and steeply elsewhere. The filled blue square marks the validation condition
+SUS = 0.4 wt%, EtOH = 3 wt%, whose measured shrinkage was 49.4%; note that it sits far
+off this fitted surface, which is the point made below. The red rectangle is again the
+design region.
+
+```{r rsm-so-contour-path}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(30, 80), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(EtOH ~ SUS, data = canonical.path(rsm2, descent = TRUE, threshold = 0),
+       col = "#08306B", pch = 1 + 6*(dist == 0))   # pch 7 marks the stationary point (dist == 0)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
+```
+
+### Contour plot centered at the stationary point
 
 The same second-order surface, re-drawn with the slice taken through the stationary point
 (`at = summary(rsm2)$canonical$xs`) and a wider EtOH range.
 
 ```{r rsm-so-contour-stationary}
-contour(rsm2, EtOH ~ SUS, image = TRUE, at = summary(rsm2)$canonical$xs,
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), at = summary(rsm2)$canonical$xs,
         bounds = list(EtOH = c(0.1, 5), SUS = c(0, 0.5)), zlim = c(40, 100), decode = FALSE)
 ```
+
+### Which model extrapolates? A test against the validation sponges
+
+The three EtOH = 3 wt% sponges were fabricated well beyond the design region, which makes
+them an honest out-of-sample test of the two competing surfaces.
+
+```{r rsm-validation-check}
+val <- read.csv("NIPS_validation.csv", header = TRUE, row.names = 1)
+
+comparison <- data.frame(
+  SUS = val$SUS, EtOH = val$EtOH,
+  `Measured (%)` = round(val$Shrinkage, 1),
+  `First order (%)` = round(predict(rsm1, val[, c("SUS", "EtOH")]), 1),
+  `Second order (%)` = round(predict(rsm2, val[, c("SUS", "EtOH")]), 1),
+  check.names = FALSE)
+kable(comparison, row.names = FALSE)
+```
+
+::: {.interpretation}
+**Interpretation.**
+
+Read this as a comparison between the two models, not as a triumph for
+either. The plane predicts 46–48% shrinkage against 49–56% measured, so it errs by 3.0,
+7.5 and 8.5 percentage points — up to about three times the model's own residual standard
+error (2.74), and larger than the entire 4.5-point swing it predicts across the design
+grid. It also gets the trend only partly right: from EtOH 1 wt% to EtOH 3 wt% the measured
+shrinkage fell at SUS 0.4 wt% (54.0 → 49.4%) and at SUS 0.24 wt% (56.9 → 56.3%), but rose
+at SUS 0.3 wt% (53.1 → 54.8%), whereas the plane predicts a uniform fall of 7.6 points
+(twice its EtOH slope of −3.78 per wt%). The honest summary is that the plane stays in the
+right range and captures the direction at the highest suspension concentration, which is
+where the paper's optimization argument was aimed.
+
+The quadratic, by contrast, is not merely imprecise but qualitatively wrong: it predicts
+about 88–95% shrinkage where 49–56% was measured. The reason is structural rather than
+accidental. A fitted quadratic with a minimum inside the design region must curve upwards
+in every direction outside it, so extrapolating it towards higher ethanol — the very
+direction the experiment wanted to explore — is guaranteed to overshoot. That is the
+general lesson worth taking from this table: polynomial surfaces describe the region they
+were fitted to, and added flexibility inside that region buys nothing outside it. The
+published analysis used the first-order model, and this comparison shows why.
+:::
 
 ## Predicted means over the design grid
 
 Estimated marginal means of Shrinkage from the first-order model, evaluated at the nine
 design combinations of the study (SUS 0.24/0.3/0.4 wt% × EtOH 0.2/0.5/1 wt%;
-`mode = "decoded"` reports them on the original concentration scales).
+`mode = "decoded"` reports them on the original concentration scales). On an additive
+model these estimated marginal means are simply the fitted plane evaluated at the grid
+points; they differ slightly from the raw cell means because the model pools information
+across all 40 sponges, and unlike raw means they come with model-based standard errors.
 
 ```{r rsm-emmeans-grid}
 # Note: emmeans reconstructs the data from the model call, so `dat` must exist in the
@@ -1701,6 +2300,17 @@ design combinations of the study (SUS 0.24/0.3/0.4 wt% × EtOH 0.2/0.5/1 wt%;
 emmeans::emmeans(rsm1, ~ SUS * EtOH, mode = "decoded",
                  at = list(SUS = c(0.24, 0.3, 0.4), EtOH = c(0.2, 0.5, 1)))
 ```
+
+::: {.interpretation}
+**Interpretation.**
+
+The estimated marginal means put numbers on the design grid:
+predicted shrinkage spans from 58.4% at the gentlest condition (SUS 0.24, EtOH 0.2) down
+to 53.9% at (SUS 0.4, EtOH 1) — a swing of about 4.5 percentage points, with standard
+errors below one point. The monotone decrease along both axes is what motivated the
+validation runs beyond the design region at EtOH = 3 wt% (`NIPS_validation.csv`), assessed above in
+the "Which model extrapolates?" section.
+:::
 
 ## Cross-checks with ordinary lm()
 
@@ -1715,10 +2325,13 @@ validation condition as before.)
 
 ```{r rsm-fo-poly-check}
 fo_poly <- lm(Shrinkage ~ poly(SUS, EtOH, degree = 1), data = dat)
-contour(fo_poly, ~ SUS + EtOH, image = TRUE, bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
-        zlim = c(40, 60), decode = FALSE)
-lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = "red")  # design region
-points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "blue")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(fo_poly, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
 ```
 
 ### Additive linear model for Shrinkage, with diagnostics
@@ -1731,10 +2344,11 @@ table, a contour zoomed to the design region, and the standard diagnostic plots
 lm2 <- lm(Shrinkage ~ SUS + EtOH, data = dat)
 summary(lm2)
 anova(lm2)
-contour(lm2, ~ SUS + EtOH, image = TRUE, bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)),
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm2, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)),
         zlim = c(50, 65), decode = FALSE)
-lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = "red")  # design region
-points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "blue")  # validation condition SUS 0.4 / EtOH 3 (outside these axis limits, so not visible here)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
 par(mfrow = c(2, 2))
 lm2 %>% plot()
 ```
@@ -1746,19 +2360,23 @@ The same approach applied to Density as the response.
 ```{r rsm-lm-density}
 lm3 <- lm(Density ~ SUS + EtOH, data = dat)
 summary(lm3)
-contour(lm3, ~ SUS + EtOH, image = TRUE, bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), decode = FALSE)
-lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = "red")  # design region
-points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "blue")  # validation condition SUS 0.4 / EtOH 3 (outside these axis limits, so not visible here)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm3, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
 ```
 
 # Structure–property scaling (Gibson–Ashby)
 
 The apparent elastic modulus scales with density following the Gibson–Ashby model for
-cellular solids, E\*/E~s~ = C · (ρ/ρ~s~)^n^, with the solid cellulose acetate reference
-values E~s~ = 1178 MPa and ρ~s~ = 1311 kg·m⁻³. The model is fitted by nonlinear least
+cellular solids, E\*/*E*~s~ = C · (ρ/ρ~s~)^n^, with the solid cellulose acetate reference
+values *E*~s~ = 1178 MPa and ρ~s~ = 1311 kg·m⁻³. The model is fitted by nonlinear least
 squares on the original scale, which reproduces the constants reported in Polymer Journal
-Figure 5b (C = 2.04, n = 2.48): an exponent near 2 indicates bending-dominated
-deformation of the cell structure, and C > 1 a comparatively rigid cell arrangement.
+Figure 5b (*C* = 2.04, *n* = 2.48). The exponent n is the informative parameter statistically:
+values near 2 are the classical signature of bending-dominated deformation in open-cell
+solids. The prefactor C measures how stiff the network is at a given relative density
+compared with that idealized reference; the Polymer Journal paper discusses what its value
+implies about the cell architecture.
 
 ```{r gibson-ashby}
 Erel   <- (nips$Modulus / 1000) / 1178   # kPa -> MPa, relative to solid CA (Es = 1178 MPa)
@@ -1766,46 +2384,89 @@ rhorel <- nips$Density / 1311            # relative to solid CA (rho_s = 1311 kg
 
 ga_fit <- nls(Erel ~ C * rhorel^n, start = list(C = 1, n = 2))
 summary(ga_fit)
+cov2cor(vcov(ga_fit))   # C and n are almost perfectly correlated (see the discussion)
 
+par(cex.axis = 1.25, cex.lab = 1.4, font.lab = 2, font.axis = 2, cex.main = 1.5)
 plot(rhorel, Erel, log = "xy",
-     pch = 21, cex = 1.4, bg = as.integer(nips$SUS) + 1,
+     pch = 21, cex = 1.4, bg = pal_sus[as.integer(nips$SUS)],
      xlab = "Relative density", ylab = "Relative modulus",
      main = "Gibson-Ashby scaling")
-curve(coef(ga_fit)[["C"]] * x^coef(ga_fit)[["n"]], add = TRUE, col = "red", lwd = 2)
-legend("topleft", legend = levels(nips$SUS), pt.bg = seq_along(levels(nips$SUS)) + 1,
-       pch = 21, title = "SUS (%)", bty = "n")
+curve(coef(ga_fit)[["C"]] * x^coef(ga_fit)[["n"]], add = TRUE, col = col_accent, lwd = 2)
+legend("topleft", legend = levels(nips$SUS), pt.bg = pal_sus,
+       pch = 21, title = "SUS (wt%)", bty = "n")
 ```
 
-# Appendix
+::: {.interpretation}
+**Interpretation.**
 
-Kept for reference; not part of the analysis pipeline.
+The two constants are estimated with very different precision: the
+exponent comes out at *n* = 2.48 ± 0.15 and exceeds the ideal open-cell value of 2, while
+the prefactor carries a wide interval (*C* = 2.04 ± 1.56). It is worth understanding *why*
+C is hard to pin down here, because the reason is geometric rather than a defect of the
+data. The sponges span relative densities of only about 0.004–0.007, while C is defined
+at ρ~rel~ = 1 — an extrapolation of more than two decades. Over such a lever arm the
+intercept and exponent are almost perfectly entangled (the correlation matrix printed
+above gives r(*C*, *n*) ≈ 0.9995): tilting the fitted line slightly within the data window
+swings the extrapolated prefactor enormously — each 0.1 change in n moves C by a factor
+of about 1.7. And the window itself cannot easily be widened: fabricating sponges over a
+much broader density range *while preserving the same internal network configuration* is
+exactly what a fixed-chemistry cryo-templating process makes difficult, so the narrow
+density span is a physical constraint of the material system, not a shortcoming of the
+experiment.
 
-## ASCA (not evaluated)
+The same entanglement explains the difference between fitting methods. Nonlinear least
+squares on the original scale gives (*C*, *n*) = (2.04, 2.48); ordinary linear regression of
+log(*E*~rel~) on log(ρ~rel~) gives (7.5, 2.73). These are not competing physical claims:
+within the measured window the two curves agree to within roughly 10% (up to ~12% at
+the window's lower edge), and they diverge only when extrapolated toward ρ~rel~ = 1, where the log-scale fit's slightly steeper
+slope compounds into an almost fourfold larger intercept (a factor of roughly
+(1/0.005)^Δ*n*^ ≈ 3.7 for Δ*n* = 0.25, where 0.005 is the mid-window relative density). The two (*C*, *n*) pairs are two points on the same
+narrow ridge of parameter combinations that describe these sponges equally well — the
+log-scale value *C* = 7.5 therefore has no separate structural meaning to interpret, and
+attempting to read it as one would double-count what is simply a reweighting of the same
+information.
 
-ANOVA–simultaneous component analysis was explored as an alternative multivariate approach
-(factor 1 = SUS, factor 2 = EtOH). The code is kept for reference but not evaluated: it
-requires an ASCA implementation such as the archived **MetStaT** package, which is not
-loaded in this document.
+Which value should be reported and interpreted? In the porous-materials literature the
+reading of C is empirical: values are compared against the accumulated body of measured
+foams and lattices and against idealized unit-cell models, a tradition anchored in the
+standard Gibson–Ashby form fitted directly — which is the convention the published value
+*C* = 2.04 follows, and the appropriate one for comparison with prior reports. Read in that
+tradition, and alongside the independently measured cell architecture (the X-ray CT
+analysis in the Polymer Journal paper), the point estimate is consistent with the
+stiffer-than-ideal, more highly connected network described there; the wide statistical
+interval records that the accessible density window alone cannot pin the prefactor down,
+not that the structural reading is wrong. Two practical habits follow for anyone reusing
+this fit: always quote C together with its paired n and the fitting convention (along the
+ridge, C is only meaningful at its own exponent), and when a method-independent stiffness
+summary is needed, quote the fitted relative modulus at a density *inside* the measured
+window — at ρ~rel~ = 0.006 both fits give *E*~rel~ ≈ 6.4 × 10⁻⁶ — which is estimated
+precisely and does not depend on the extrapolation at all.
+:::
 
-```{r asca, eval=FALSE, echo=TRUE}
-set.seed(1234)
+# Concluding remarks
 
-# Design matrix: recode the factor levels as 1/2/3 integers, as ASCA.Calculate expects.
-# (The original draft of this block mapped SUS levels "0.27"/"0.33"/"0.44", which do not
-# match the study's actual levels of 0.24/0.3/0.4 wt% — corrected here.)
-nips.F <- nips[, c("SUS", "EtOH")]
-map.1 <- c("0.24" = 1, "0.3" = 2, "0.4" = 3)
-nips.F$SUS <- map.1[nips.F$SUS]
-map.2 <- c("0.2" = 1, "0.5" = 2, "1" = 3)
-nips.F$EtOH <- map.2[nips.F$EtOH]
-names(nips.F) <- c("1", "2")
-nips.F <- as.matrix(nips.F)
-
-# Response matrix (columns 8–16 of the data).
-nips.X <- as.matrix(nips[, 8:16])
-
-# Decompose into factor-1, factor-2 and interaction effects; permutation test.
-ASCA.nips <- ASCA.Calculate(nips.X, nips.F, equation.elements = "1,2,12", scaling = TRUE)
-ASCA.DoPermutationTest(ASCA.nips, perm = 1000)
-```
-
+Taken together, the analyses tell one coherent story with two levers. The suspension
+concentration sets how much material the cryo-templated network contains: density,
+porosity, stiffness and the Maxwell stress amplitudes all follow it almost
+deterministically (*R*² up to 0.96), and the Gibson–Ashby fit condenses this into a single
+power law whose exponent (*n* = 2.48) sits above the value of 2 expected for ideal
+open-cell bending. The ethanol concentration acts earlier in the process, on
+ice-crystal formation, and therefore shows up in the shape- and time-related quantities:
+shrinkage decreases while diameter, recovery, residual stress and the characteristic
+relaxation time all increase. The multivariate view sharpens how the two levers differ. They are not
+orthogonal: both act mainly on the same "strength" component of the mechanical profile,
+with suspension concentration much the stronger of the two. What distinguishes them is
+that ethanol additionally raises recovery and residual stress, and it does so while
+*lowering* stiffness — so the two properties trade off along the ethanol axis. Suspension
+concentration changes stiffness with no *detectable* effect on recovery (*P* = 0.93), which
+is what makes the two separately addressable here. That last statement deserves its own
+caveat, of the kind this document has applied throughout: with 40 sponges the data bound
+any suspension effect on recovery to at most about 7 percentage points — an upper limit
+almost as large as ethanol's own effect. The 95% interval for the largest suspension
+contrast on recovery runs from −4.8 to +6.9 percentage points, against an estimated
+ethanol effect of +7.4. "No effect detected" is not "no effect", and a larger study could well
+find one.
+For the mechanistic interpretation of these patterns (cell-wall thickening,
+ice-templating control, nanofilm delamination and slippage), see the two papers cited at
+the top; this document is meant to let readers retrace, probe and extend the statistical
+side of that story.
