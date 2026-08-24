@@ -2,7 +2,7 @@
 
 The dataset files in this repository —
 
-- `NIPS.csv` — the 40-sponge characterisation dataset (fabrication factors, geometry,
+- `NIPS.csv` — the 40-sponge characterization dataset (fabrication factors, geometry,
   and stress-relaxation mechanical parameters), and
 - `NIPS_validation.csv` — three additional sponges (EtOH = 3 wt%) used to validate the
   response-surface-methodology prediction
@@ -31,6 +31,8 @@ reported:
    *Mechanically tunable nanofilm-based cellulose acetate sponges via crosslinker-free
    cryo-templating.* Polymer Journal **2025**, 57, 1409–1420.
    <https://doi.org/10.1038/s41428-025-01083-z>
+
+(BibTeX entries for both papers are provided in `README.md`.)
 
 ## Provenance
 
