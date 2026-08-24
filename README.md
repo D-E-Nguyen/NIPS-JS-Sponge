@@ -1,5 +1,8 @@
 # NIPS-JS Sponge — Data & Analysis Code
 
+**Author:** De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927)),
+Kyoto Institute of Technology.
+
 This repository contains the dataset and the R scripts (R Markdown) used for the
 statistical data analysis and visualization in the following research publications:
 
@@ -22,7 +25,7 @@ statistical data analysis and visualization in the following research publicatio
 
 | File | Purpose |
 |------|---------|
-| `NIPS.Rmd` | The complete analysis notebook, organised as a pipeline: data overview → distributional checks (Shapiro–Wilk, Q–Q, Box–Cox) → per-factor boxplots → per-response regression & ANOVA → correlations (Pearson/Spearman) → multivariate analysis (PCA, multi-response models, MANOVA) → response-surface methodology (first-/second-order models of Shrinkage, canonical analysis, steepest descent) → Gibson–Ashby scaling. |
+| `NIPS.Rmd` | The complete analysis notebook, organized as a pipeline: data overview → distributional checks (Shapiro–Wilk, Q–Q, Box–Cox) → per-factor boxplots → per-response regression & ANOVA → correlations (Pearson/Spearman) → multivariate analysis (PCA, multi-response models, MANOVA, ASCA) → response-surface methodology (first-/second-order models of Shrinkage, canonical analysis, extrapolation test) → Gibson–Ashby scaling. Figures are vector SVG with a consistent color system. |
 | `NIPS.csv` | **The study dataset** — 40 sponges, all fabrication factors and response variables. |
 | `NIPS_validation.csv` | Three additional sponges (EtOH = 3 wt%) fabricated to validate the RSM prediction; not part of the n = 40 models. |
 | `DATA_LICENSE.md` | License and citation terms for the datasets (CC BY 4.0). |
@@ -69,11 +72,13 @@ Re-running these scripts on `NIPS.csv` reproduces the published statistics:
 
 Note: the statistics involving `T` (characteristic relaxation time) in Polymer Journal
 Table S2 and Figure S6 were derived from an earlier version of the Maxwell-fit
-parameters; re-running the analysis on this final dataset yields slightly different
-values for that one variable, with unchanged qualitative conclusions.
+parameters; re-running the analysis on this final dataset weakens the
+suspension-concentration effect on `T` to borderline, while the other conclusions for
+that variable (and all results for every other variable) are unchanged. The notebook
+discusses this in its opening section.
 
-Other analyses in the repository (Pearson panel, PCA, MANOVA, multi-response models,
-Box–Cox, second-order RSM) are exploratory work beyond the published set.
+Other analyses in the repository (Pearson panel, PCA, MANOVA, ASCA, multi-response
+models, Box–Cox, second-order RSM) are exploratory work beyond the published set.
 
 ---
 
@@ -83,8 +88,8 @@ Box–Cox, second-order RSM) are exploratory work beyond the published set.
 
    ```r
    install.packages(c("psych", "factoextra", "FactoMineR", "ggplot2", "dplyr",
-                      "cowplot", "broom", "knitr", "MASS", "rsm", "emmeans",
-                      "rmarkdown"))
+                      "cowplot", "broom", "knitr", "MASS", "car", "rsm", "emmeans",
+                      "svglite", "rmarkdown"))
    ```
 
 2. Knit `NIPS.Rmd` (e.g. the **Knit** button in RStudio, or
@@ -92,11 +97,76 @@ Box–Cox, second-order RSM) are exploratory work beyond the published set.
 
 Notes:
 
-- Code chunks are hidden in the rendered reports (`echo = FALSE`); open the `.Rmd` files
+- Code chunks are hidden in the rendered reports (`echo = FALSE`); open the `.Rmd` file
   to read the code itself, which is commented throughout.
 - Knitting `NIPS.Rmd` also writes two small output files next to the document
   (`spearman_correlation_matrix.csv`, `spearman_p_matrix.csv`), used for the papers'
   supplementary tables.
+- Figures are rendered as vector graphics (`dev = "svglite"`), so the self-contained
+  HTML is only about 5 MB and every figure stays sharp at any zoom level. For Word or
+  PDF output, switch `dev` to `"png"` in the `setup` chunk.
+- All figures share one color system: blues encode the suspension-concentration levels
+  (light → dark = low → high) and warm reds encode the ethanol levels, so hue identifies
+  the factor and darkness the level throughout the document.
+
+## 📖 For readers
+
+Each analysis section is followed by an **Interpretation** paragraph explaining what the
+output means, why that method was chosen, and what its limitations are. The notebook is
+therefore usable as a worked example of a factorial-design analysis, not only as a
+reproduction script. Topics covered along the way include:
+
+- why marginal normality tests can fail on perfectly well-behaved factorial data;
+- what standardizing does and does not make comparable in a boxplot;
+- sequential (Type I) versus order-free (Type II) sums of squares in an unbalanced design;
+- how to read PCA loadings, contributions and biplot ellipses — and why overlapping
+  ellipses can mean a small effect rather than no effect;
+- why canonical eigenvalues must be read on coded, not raw, factor scales;
+- a concrete demonstration that a first-order surface extrapolated better than a
+  second-order one outside the design region;
+- a self-contained, fully executed ASCA (ANOVA–simultaneous component analysis) written
+  out step by step rather than imported from a package;
+- why the Gibson–Ashby prefactor C is intrinsically hard to estimate from a narrow
+  density window, and how to report scaling constants honestly.
+
+The mechanistic interpretation of the results (cell-wall thickening, ice-templating
+control, nanofilm delamination and slippage) belongs to the two papers cited above; this
+notebook covers the statistical side and points to them for the materials science.
+
+---
+
+## 📚 How to cite
+
+If this repository's data or analyses are useful in your research, please cite the
+corresponding publication(s):
+
+```bibtex
+@article{Nguyen2025NIPSJS,
+  author  = {Nguyen, De and Kinashi, Kenji and Nishikawa, Yukihiro and
+             Sakai, Wataru and Tsutsumi, Naoto},
+  title   = {Nonsolvent-Induced Phase Separation--Jet Spinning: An Innovative
+             Technique for Producing Cellulosic Nanofilms, Suspensions, and
+             Nanofilm-Based Sponges},
+  journal = {ACS Omega},
+  year    = {2025},
+  volume  = {10},
+  number  = {31},
+  pages   = {34389--34398},
+  doi     = {10.1021/acsomega.5c02353}
+}
+
+@article{Nguyen2025Sponges,
+  author  = {Nguyen, De and Kinashi, Kenji and Nishikawa, Yukihiro and
+             Sakai, Wataru and Tsutsumi, Naoto},
+  title   = {Mechanically tunable nanofilm-based cellulose acetate sponges via
+             crosslinker-free cryo-templating},
+  journal = {Polymer Journal},
+  year    = {2025},
+  volume  = {57},
+  pages   = {1409--1420},
+  doi     = {10.1038/s41428-025-01083-z}
+}
+```
 
 ---
 
