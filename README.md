@@ -101,6 +101,10 @@ Reading aids built into the page:
 (Until Pages is enabled, the file can be previewed via
 `https://htmlpreview.github.io/?` followed by the raw-file URL of `docs/index.html`.)
 
+The site also serves the two CSVs directly (`docs/NIPS.csv`, `docs/NIPS_validation.csv`),
+so the notebook's download links work for readers who never visit the repository. If the
+data files ever change, copy them into `docs/` again.
+
 To refresh the site after editing the notebook:
 
 ```r
