@@ -83,6 +83,15 @@ body { font-size: 16px; line-height: 1.65; color: #1a1a1a; }
 h1, h2, h3, h4 { color: #08306B; }
 h1 { border-bottom: 2px solid #C9DDF0; padding-bottom: .25em; }
 
+/* Download strip: the one box a data-seeking visitor is looking for */
+.download {
+  background: #FDF6F5;
+  border-left: 4px solid #B2352C;
+  border-radius: 0 6px 6px 0;
+  padding: .7em 1.1em;
+  margin: 1.2em 0;
+}
+
 /* Interpretation call-outs: the discussion blocks are visually separated from
    methods text so readers can scan figure -> box -> next section */
 .interpretation {
@@ -152,6 +161,18 @@ Two representations of the dataset are used: the factor version `nips` (the desi
 as discrete groups; used everywhere except the response-surface part) and the numeric
 version `dat` (the response-surface models need continuous predictors) — see the import
 section.
+
+::: {.download}
+**Get the data and code.** Everything on this page runs from two small CSV files that
+accompany it: **[`NIPS.csv`](NIPS.csv)** (the 40-sponge dataset) and
+**[`NIPS_validation.csv`](NIPS_validation.csv)** (the three RSM-validation sponges) —
+click to download, ready to run. The analysis source file is behind the **Code ▾**
+button at the top right of this page, and the complete repository (data + code + license)
+lives at <https://github.com/D-E-Nguyen/NIPS-JS-Sponge>. The papers linked above are the
+place to read the science; the SI tables there contain the raw data, but these CSVs are
+the ready-to-use version (see below for how the derived columns were computed). Data are
+CC BY 4.0 — please cite the publications when reusing them.
+:::
 
 **Data.** The full dataset ships with this repository as `NIPS.csv` (40 sponges), licensed
 CC BY 4.0 — see `DATA_LICENSE.md`. The geometry variables (Weight … Shrinkage) correspond
