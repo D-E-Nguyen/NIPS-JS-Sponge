@@ -8,6 +8,10 @@ output:
       collapsed: true
     toc_depth: 3
     number_sections: yes
+    anchor_sections: true
+    code_download: true
+    includes:
+      in_header: head-meta.html
     df_print: default
     fig_width: 10
     fig_height: 6
