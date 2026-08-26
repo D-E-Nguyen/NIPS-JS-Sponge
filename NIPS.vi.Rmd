@@ -1,6 +1,8 @@
 ---
 title: "Xốp NIPS-JS — Dữ liệu & Phân tích thống kê"
-author: "De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927))"
+author:
+  - "De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927)), Kyoto Institute of Technology"
+  - "Kenji Kinashi ([ORCID 0000-0003-4342-3516](https://orcid.org/0000-0003-4342-3516)), Kyoto Institute of Technology"
 lang: vi
 output:
   html_document:

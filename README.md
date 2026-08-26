@@ -1,7 +1,13 @@
 # NIPS-JS Sponge — Data & Analysis Code
 
-**Author:** De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927)),
+📝 **Author:**
+
+De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927)),
 Kyoto Institute of Technology.
+
+Kenji Kinashi ([ORCID 0000-0003-4342-3516](https://orcid.org/0000-0003-4342-3516)),
+Kyoto Institute of Technology.
+
 
 🔗 **Browse the full rendered analysis online:**
 <https://d-e-nguyen.github.io/NIPS-JS-Sponge/> (English) ·
