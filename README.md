@@ -4,7 +4,9 @@
 Kyoto Institute of Technology.
 
 🔗 **Browse the full rendered analysis online:**
-<https://d-e-nguyen.github.io/NIPS-JS-Sponge/>
+<https://d-e-nguyen.github.io/NIPS-JS-Sponge/> (English) ·
+[Bản tiếng Việt](https://d-e-nguyen.github.io/NIPS-JS-Sponge/vi.html) (Vietnamese) ·
+[日本語版](https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html) (Japanese)
 
 This repository contains the dataset and the R Markdown analysis notebook behind the
 statistical data analysis and visualization in the following research publications:
@@ -29,16 +31,18 @@ statistical data analysis and visualization in the following research publicatio
 | File | Purpose |
 |------|---------|
 | `NIPS.Rmd` | The complete analysis notebook, organized as a pipeline: data overview → distributional checks (Shapiro–Wilk, Q–Q, Box–Cox) → per-factor boxplots → per-response regression & ANOVA → correlations (Pearson/Spearman) → multivariate analysis (PCA, multi-response models, MANOVA, ASCA) → response-surface methodology (first-/second-order models of Shrinkage, canonical analysis, extrapolation test) → Gibson–Ashby scaling. Figures are vector SVG with a consistent color system. |
+| `NIPS.vi.Rmd`, `NIPS.ja.Rmd` | The same notebook with all prose translated into Vietnamese (Tiếng Việt) and Japanese (日本語). The R code is byte-identical to `NIPS.Rmd`, so all language versions produce identical figures and statistics. |
 | `NIPS.csv` | **The study dataset** — 40 sponges, all fabrication factors and response variables. |
 | `NIPS_validation.csv` | Three additional sponges (EtOH = 3 wt%) fabricated to validate the RSM prediction; not part of the *n* = 40 models. |
 | `DATA_LICENSE.md` | License and citation terms for the datasets (CC BY 4.0). |
 | `LICENSE` | MIT license for the analysis code. |
-| `docs/` | The rendered notebook (`index.html`), the two CSVs, and `sitemap.xml`, served as a website via GitHub Pages. |
-| `head-meta.html` | Injected into the rendered page's `<head>` at knit time (search-engine metadata, dataset markup, site-verification tag); required for knitting — do not delete. |
+| `docs/` | The rendered notebooks (`index.html` English, `vi.html` Vietnamese, `ja.html` Japanese), the two CSVs, and `sitemap.xml`, served as a website via GitHub Pages. The CSVs here are copies of the root files — re-copy them whenever the data change, so the in-page download links keep working. |
+| `head-meta.html`, `head-meta.vi.html`, `head-meta.ja.html` | Injected into the rendered pages' `<head>` at knit time (search-engine metadata, dataset markup, site-verification tag, `hreflang` language alternates); required for knitting — do not delete. |
 
 The dataset is a 3 × 3 full factorial design (*n* = 40 sponges): `SUS` (polymer suspension
 concentration; 0.24, 0.3, 0.4 wt%) × `EtOH` (ethanol cosolvent concentration; 0.2, 0.5,
-1 wt%), with 4–7 replicates per combination. A full column dictionary is included at the
+1 wt%), with 4–7 replicates per combination (counted from the shipped dataset; the
+Polymer Journal Experimental section quotes 3–5). A full column dictionary is included at the
 top of `NIPS.Rmd`.
 
 ---
@@ -89,8 +93,15 @@ models, Box–Cox, second-order RSM) are exploratory work beyond the published s
 
 ## 🌐 Browse the notebook online
 
-The full analysis is browsable at
-<https://d-e-nguyen.github.io/NIPS-JS-Sponge/> — no R required.
+The full analysis is browsable online — no R required — in three languages:
+
+- **English:** <https://d-e-nguyen.github.io/NIPS-JS-Sponge/>
+- **Tiếng Việt:** <https://d-e-nguyen.github.io/NIPS-JS-Sponge/vi.html>
+- **日本語:** <https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html>
+
+Each page links to the others at the top. All are rendered from the same R code, so every
+figure, table, and statistic is identical; only the prose differs. (Figure and table labels
+stay in English in every version, matching the publications.)
 
 Reading aids built into the page:
 
@@ -115,7 +126,23 @@ Reading aids built into the page:
    ```
 
 2. Knit `NIPS.Rmd` (e.g. the **Knit** button in RStudio, or
-   `rmarkdown::render("NIPS.Rmd")`). The document can be rendered to HTML, Word, or PDF.
+   `rmarkdown::render("NIPS.Rmd")`); knitting `NIPS.vi.Rmd` or `NIPS.ja.Rmd` the same way
+   produces the Vietnamese or Japanese version. HTML and Word output work for all three.
+   PDF output works for the English notebook; the translations need a Unicode-capable
+   engine (add `latex_engine: xelatex` and a CJK-capable `mainfont` to the `pdf_document`
+   block first).
+
+3. To regenerate the published site, render each notebook into `docs/` under a UTF-8
+   locale:
+
+   ```r
+   rmarkdown::render("NIPS.Rmd",    output_dir = "docs", output_file = "index.html")
+   rmarkdown::render("NIPS.vi.Rmd", output_dir = "docs", output_file = "vi.html")
+   rmarkdown::render("NIPS.ja.Rmd", output_dir = "docs", output_file = "ja.html")
+   ```
+
+   `docs/` also serves `NIPS.csv` and `NIPS_validation.csv` so the in-page download links
+   work on the live site; re-copy them if the data ever change.
 
 Notes:
 
@@ -124,6 +151,12 @@ Notes:
 - Knitting `NIPS.Rmd` also writes two small output files next to the document
   (`spearman_correlation_matrix.csv`, `spearman_p_matrix.csv`), used for the papers'
   supplementary tables.
+- **Render in a UTF-8 locale.** RStudio's **Knit** button already does this. When knitting
+  non-interactively (`Rscript`, CI, `make`), set the character locale explicitly —
+  `LC_CTYPE=en_US.UTF-8 Rscript -e 'rmarkdown::render("NIPS.Rmd")'` — otherwise R escapes
+  the non-ASCII characters in table headers (`Optimal λ`, `*R*²`) as literal
+  `<U+03BB>` / `<U+00B2>` text in the output. Leave `LC_COLLATE=C` so sort orders stay
+  byte-reproducible.
 - Figures are rendered as vector graphics (`dev = "svglite"`), so the self-contained
   HTML stays under 6 MB and every figure stays sharp at any zoom level. For Word or
   PDF output, switch `dev` to `"png"` in the `setup` chunk.
@@ -196,6 +229,6 @@ corresponding publication(s):
 
 ## 📜 Licensing
 
-- **Code** (`NIPS.Rmd`): MIT License (`LICENSE`).
+- **Code** (`NIPS.Rmd`, `NIPS.vi.Rmd`, `NIPS.ja.Rmd`): MIT License (`LICENSE`).
 - **Data** (`NIPS.csv`, `NIPS_validation.csv`): CC BY 4.0 (`DATA_LICENSE.md`) — please
   cite the two publications above when reusing the data.

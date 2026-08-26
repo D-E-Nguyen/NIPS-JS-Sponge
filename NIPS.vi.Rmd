@@ -1,0 +1,2533 @@
+---
+title: "Xốp NIPS-JS — Dữ liệu & Phân tích thống kê"
+author: "De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927))"
+lang: vi
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    anchor_sections: true
+    code_download: true
+    includes:
+      in_header: head-meta.vi.html
+    df_print: default
+    fig_width: 10
+    fig_height: 6
+  word_document:
+    toc: true
+    fig_width: 10
+    fig_height: 6
+    keep_md: true
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: 120
+---
+
+<div style="text-align: right; margin: 0.2em 0 1.2em; font-size: 0.95em;">
+<a href="./" hreflang="en" lang="en">English</a> · <strong>Tiếng Việt</strong> · <a href="ja.html" hreflang="ja" lang="ja">日本語</a>
+</div>
+
+```{r setup, include=FALSE}
+# Global chunk options: code is hidden in the rendered report (echo = FALSE), so the
+# knitted document shows only figures and tables. Read this .Rmd file for the code.
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.retina = 2,
+                      dev = "svglite")  # vector figures; use dev = "png" for Word/PDF output
+
+library(psych)       # pairs.panels(): scatter-plot matrices with correlations
+library(factoextra)  # fviz_*(): publication-ready PCA graphics
+library(FactoMineR)  # PCA(): principal component analysis
+library(ggplot2)     # grammar-of-graphics plotting
+library(dplyr)       # %>% pipe used throughout
+library(cowplot)     # plot_grid(): combining plots into labelled panels
+library(broom)       # tidy(): turn model summaries into data frames
+library(knitr)       # kable(): formatted tables in the rendered document
+library(MASS)        # boxcox(): Box–Cox transformation profiles
+library(car)         # Anova(type = 2): order-free tests for the summary table
+library(rsm)         # response-surface models: FO()/SO(), canonical analysis, contour.lm()
+# emmeans is called via emmeans::emmeans() without attaching the package.
+
+## ---- Figure styling: one colour system for the whole document -------------------
+## Each design factor gets a single-hue ramp whose light -> dark order follows the
+## concentration order, so hue identifies the factor and darkness identifies the
+## level in every figure: SUS = blues, EtOH = reds. Both ramps are colour-blind-safe
+## (adjacent-step separation validated for deutan/protan/tritan vision). Box fills are
+## drawn at alpha 0.65 so that medians/whiskers stay readable on the darkest steps; the
+## overlaid dots carry the full-strength colours, and axis position encodes the level
+## in every gallery panel, so no information rides on the lightened fills alone.
+pal_sus  <- c("0.24" = "#5FB0E2", "0.3" = "#2171B5", "0.4" = "#08306B")
+pal_etoh <- c("0.2"  = "#FB6A4A", "0.5" = "#CB181D", "1"   = "#67000D")
+scale_sus  <- scale_fill_manual(values = pal_sus)
+scale_etoh <- scale_fill_manual(values = pal_etoh)
+scale_sus_line  <- scale_colour_manual(values = pal_sus)   # ellipse outlines in biplots
+scale_etoh_line <- scale_colour_manual(values = pal_etoh)
+col_accent  <- "#B2352C"                       # annotation accent: fit/reference lines
+col_bar     <- "#2171B5"                       # single-series bars (scree, contributions)
+pal_surface <- colorRampPalette(c("#F7FBFF", "#C9DDF0", "#8FBEE0", "#4A94CB"))(64)
+
+## Publication base theme: white background, black axis text, no decorative bolding.
+theme_pub <- theme_classic(base_size = 14) +
+  theme(
+    axis.text    = element_text(size = 13, face = "bold", colour = "black"),
+    axis.title   = element_text(size = 15, face = "bold"),
+    axis.line    = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks   = element_line(linewidth = 0.5, colour = "black"),
+    plot.title   = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 13, face = "bold.italic"),
+    legend.text  = element_text(size = 12, face = "bold")
+  )
+```
+
+```{css doc-style, echo=FALSE}
+/* Typography and reading comfort (HTML output only) */
+body { font-size: 16px; line-height: 1.65; color: #1a1a1a; }
+h1, h2, h3, h4 { color: #08306B; }
+h1 { border-bottom: 2px solid #C9DDF0; padding-bottom: .25em; }
+
+/* Download strip: the one box a data-seeking visitor is looking for */
+.download {
+  background: #FDF6F5;
+  border-left: 4px solid #B2352C;
+  border-radius: 0 6px 6px 0;
+  padding: .7em 1.1em;
+  margin: 1.2em 0;
+}
+
+/* Interpretation call-outs: the discussion blocks are visually separated from
+   methods text so readers can scan figure -> box -> next section */
+.interpretation {
+  background: #F2F7FC;
+  border-left: 4px solid #2171B5;
+  border-radius: 0 6px 6px 0;
+  padding: .85em 1.15em;
+  margin: 1.3em 0;
+}
+.interpretation > p:first-child { margin: 0 0 0.35em 0; }
+.interpretation > p:first-child > strong:first-child { color: #2171B5; font-size: 1.04em; }
+
+/* Tables: quiet zebra striping, strong header rule */
+table { border-collapse: collapse; margin: 1em 0; }
+th { border-bottom: 2px solid #08306B; padding: 5px 12px; text-align: left; }
+td { padding: 4px 12px; }
+tbody tr:nth-child(even) { background: #F7FAFD; }
+
+/* Console output blocks: recessive, clearly non-prose */
+pre { border-left: 3px solid #DCE7F2; background: #FAFBFD; }
+```
+
+
+# Về tài liệu này
+
+Tài liệu này trình bày đầy đủ phần mô tả bộ dữ liệu và toàn bộ phân tích thống kê đằng sau
+các nghiên cứu về xốp NIPS-JS:
+
+1. *Nonsolvent-Induced Phase Separation–Jet Spinning: An Innovative Technique for Producing
+   Cellulosic Nanofilms, Suspensions, and Nanofilm-Based Sponges* (2025), ACS Omega,
+   <https://doi.org/10.1021/acsomega.5c02353>
+2. *Mechanically tunable nanofilm-based cellulose acetate sponges via crosslinker-free
+   cryo-templating* (2025), Polymer Journal,
+   <https://doi.org/10.1038/s41428-025-01083-z>
+
+Nếu bộ dữ liệu hoặc phân tích này hữu ích cho nghiên cứu của bạn, xin trích dẫn (các) công bố
+tương ứng ở trên — các mục trích dẫn BibTeX sẵn dùng được cung cấp trong tệp `README.md` của
+kho lưu trữ (repository).
+
+Bốn mươi mẫu xốp đã được chế tạo theo thí nghiệm yếu tố toàn phần 3 × 3 (full factorial design) trên hai yếu tố thí nghiệm — nồng độ huyền phù polymer (`SUS`: 0.24, 0.3, 0.4 wt%,
+tức phần trăm khối lượng) và nồng độ đồng dung môi ethanol (`EtOH`: 0.2, 0.5, 1 wt%), với
+4–7 lần lặp cho mỗi tổ hợp (đếm từ bộ dữ liệu kèm theo; mục Experimental của bài báo
+Polymer Journal ghi 3–5) — và được đặc trưng bằng một tập các biến đáp ứng vật lý và cơ học.
+
+Tài liệu được tổ chức như một quy trình xuyên suốt từ dữ liệu thô đến các mô hình:
+
+1. **Dữ liệu nghiên cứu** — nhập dữ liệu và tổng quan về tất cả các biến đáp ứng.
+2. **Kiểm tra phân phối** — kiểm định Shapiro–Wilk, biểu đồ Q–Q chuẩn và các đường Box–Cox,
+   được thực hiện trước khi xây dựng bất kỳ mô hình nào.
+3. **Ảnh hưởng của các yếu tố I: phân phối theo mức yếu tố** — biểu đồ hộp theo một yếu tố
+   cho các biến đáp ứng và biểu đồ hộp theo hai yếu tố cho một số biến đáp ứng chọn lọc.
+4. **Ảnh hưởng của các yếu tố II: hồi quy & ANOVA** — một mô hình tuyến tính cho mỗi biến đáp ứng được đưa vào mô hình (tất cả trừ `Weight`) với `SUS` và `EtOH` là biến dự báo phân loại, cùng các
+   mô hình có tương tác cho một số biến đáp ứng chọn lọc.
+5. **Tương quan giữa các biến đáp ứng** — các phân tích Pearson và Spearman.
+6. **Phân tích đa biến** — PCA với biểu đồ biplot, hồi quy đa đáp ứng, hồi quy trên điểm
+   thành phần, MANOVA, và phép phân rã biến động đa biến bằng ASCA.
+7. **Phân tích bề mặt đáp ứng** — `SUS` và `EtOH` là biến dự báo liên tục: bề mặt bậc nhất
+   và bậc hai cho độ co ngót (Shrinkage), phân tích chính tắc, một phép kiểm chứng dựa trên
+   các mẫu xốp EtOH = 3 wt%, và
+   các đối chiếu với hồi quy thông thường.
+8. **Quan hệ cấu trúc–tính chất (Gibson–Ashby)** — khớp quy luật lũy thừa Gibson–Ashby giữa
+   mô đun tương đối và khối lượng riêng tương đối.
+9. **Kết luận** — tóm lược bức tranh tổng thể.
+
+Bộ dữ liệu được dùng dưới hai dạng biểu diễn: phiên bản yếu tố `nips` (các mức thiết kế
+được coi là các nhóm rời rạc; dùng ở mọi nơi trừ phần bề mặt đáp ứng) và phiên bản số `dat`
+(các mô hình bề mặt đáp ứng cần biến dự báo liên tục) — xem mục nhập dữ liệu.
+
+::: {.download}
+**Tải dữ liệu và mã nguồn.** Mọi kết quả trên trang này được chạy từ hai tệp CSV nhỏ đi kèm:
+**[`NIPS.csv`](NIPS.csv)** (bộ dữ liệu 40 mẫu xốp) và
+**[`NIPS_validation.csv`](NIPS_validation.csv)** (ba mẫu xốp kiểm chứng RSM) —
+nhấp để tải về, sẵn sàng chạy ngay. Tệp mã nguồn của phân tích nằm sau nút **Code ▾**
+ở góc trên bên phải trang này, và kho lưu trữ đầy đủ (dữ liệu + mã + giấy phép)
+đặt tại <https://github.com/D-E-Nguyen/NIPS-JS-Sponge>. Hai bài báo dẫn ở trên là nơi để
+đọc nội dung khoa học; các bảng SI trong đó chứa dữ liệu gốc, nhưng hai tệp CSV này là
+phiên bản sẵn dùng (xem bên dưới về cách tính các cột dẫn xuất). Dữ liệu được cấp phép
+CC BY 4.0 — xin trích dẫn các công bố khi sử dụng lại.
+:::
+
+**Dữ liệu.** Bộ dữ liệu đầy đủ đi kèm kho lưu trữ này dưới tên `NIPS.csv` (40 mẫu xốp), cấp phép
+CC BY 4.0 — xem `DATA_LICENSE.md`. Các biến hình học (Weight … Shrinkage) tương ứng với
+Bảng S1 trong tài liệu bổ trợ (Supporting Information) của ACS Omega và các biến cơ học
+(Recovery … RS) tương ứng với Bảng S1 trong tài liệu bổ trợ (Supplementary Information) của Polymer Journal; cả hai bảng SI
+liệt kê cùng 40 mẫu xốp theo cùng thứ tự hàng. Các biến đáp ứng hình học dẫn xuất
+(Volume, Density, Porosity, Shrinkage) được lưu ở độ chính xác đầy đủ, tính lại từ
+Weight/Diameter/Height theo các phương trình trong các bài báo — các bảng SI in giá trị đã làm tròn,
+còn các thống kê đã công bố được tính trên giá trị chưa làm tròn. Ba mẫu xốp bổ sung
+dùng để kiểm chứng dự đoán RSM (EtOH = 3 wt%) được cung cấp trong `NIPS_validation.csv`.
+
+**Từ điển cột** (các quy trình đo được mô tả trong các bài báo):
+
+| Cột | Vai trò | Mô tả |
+|---|---|---------|
+| `ID` | định danh | Số thứ tự mẫu; trở thành tên hàng khi nhập dữ liệu. |
+| `SUS` | yếu tố thiết kế | Nồng độ huyền phù polymer (wt%; các mức 0.24 / 0.3 / 0.4). |
+| `EtOH` | yếu tố thiết kế | Nồng độ đồng dung môi ethanol (wt%; các mức 0.2 / 0.5 / 1). |
+| `Weight` | biến đáp ứng | Khối lượng mẫu xốp (g); phép đo trực tiếp (cân điện tử). |
+| `Diameter`, `Height` | biến đáp ứng | Kích thước mẫu xốp (mm); các phép đo trực tiếp (thước kẹp). |
+| `Volume` | biến đáp ứng | Thể tích khối (cm³), dẫn xuất theo hình trụ: V = π/4 · h · d². |
+| `Density` | biến đáp ứng | Khối lượng riêng (bulk density; kg·m⁻³), dẫn xuất: ρ = m/V. |
+| `Porosity` | biến đáp ứng | Độ xốp (%), dẫn xuất: 100 · (1 − ρ/ρ~CA~) với ρ~CA~ = 1311 kg·m⁻³. |
+| `Shrinkage` | biến đáp ứng | Độ co ngót thể tích (%), dẫn xuất: 100 · (1 − V/V~suspension~) với 15 mL huyền phù. |
+| `Recovery` | biến đáp ứng | Phần trăm chiều cao ban đầu còn giữ lại sau thí nghiệm chùng ứng suất (stress relaxation) (%). |
+| `Modulus` | biến đáp ứng | Mô đun đàn hồi biểu kiến E\* từ thí nghiệm nén (kPa). |
+| `A0`; `A1`,`t1`; `A2`,`t2`; `A3`,`t3` | biến đáp ứng | Kết quả khớp mô hình Maxwell tổng quát ba nhánh cho các đường cong chùng ứng suất: ứng suất cân bằng σ~e~ (`A0`, kPa), các ứng suất nhánh σ~1–3~ (`A1`–`A3`, kPa) và các thời gian chùng ứng suất τ~1–3~ (`t1`–`t3`, s). |
+| `T` | biến đáp ứng | Thời gian chùng ứng suất đặc trưng τ (s): tổng các thời gian chùng ứng suất thành phần, t1 + t2 + t3. Lưu ý: `T` cũng là ký hiệu tắt của `TRUE` trong R; vì vậy cột này luôn được truy cập thông qua data frame (ví dụ `nips$T`), không bao giờ gọi trực tiếp một chữ `T` trần. |
+| `RS` | biến đáp ứng | Ứng suất dư σ~r~ (không thứ nguyên): ứng suất đã chuẩn hóa mà mẫu xốp vẫn còn chịu khi thí nghiệm chùng ứng suất kết thúc. |
+
+**Sự tương ứng với các kết quả đã công bố.** Các mô hình cộng tính và ANOVA cho Chiều cao (Height),
+Đường kính (Diameter), Độ co ngót (Shrinkage) và Khối lượng riêng (Density) tái lập Bảng 1 và
+các Bảng S2–S5 của ACS Omega; các biểu đồ hộp theo một yếu tố của những biến này tương ứng với
+Hình 5 của ACS Omega. Các mô hình có tương tác cho Mô đun (Modulus), RS, T và Độ phục hồi (Recovery)
+tái lập Bảng S2 của Polymer Journal, phân tích Spearman tương ứng với Hình S6 của Polymer Journal
+(hình này dùng tập con Modulus, RS, T, Recovery), và phép khớp Gibson–Ashby tái lập các hằng số
+tỉ lệ của Hình 5b trong Polymer Journal (*C* = 2.04, *n* = 2.48). Mô hình bề mặt đáp ứng bậc nhất
+tái lập Bảng 2, Bảng S6 và Hình 6j của ACS Omega. Một điểm cần lưu ý liên quan đến `T` (thời gian
+chùng ứng suất đặc trưng τ): các thống kê cho biến này trong Bảng S2 và Hình S6 của Polymer Journal
+được tính từ một phiên bản trước đó của các tham số khớp Maxwell, và khi chạy lại phân tích trên
+bộ dữ liệu cuối cùng này, các con số thay đổi đáng kể. Rõ nhất là bảng đã công bố báo cáo một
+hiệu ứng rất có ý nghĩa thống kê của nồng độ huyền phù lên τ, trong khi trên bộ dữ liệu này
+hiệu ứng đó yếu đi đến sát ranh giới ý nghĩa: *P* = 0.051 trong mô hình cộng tính và 0.038 khi
+đưa tương tác vào, theo các kiểm định tuần tự (kiểu I) khớp với phân tích đã công bố, hay lần lượt
+0.080 và 0.062 theo các kiểm định kiểu II (hiệu chỉnh theo yếu tố còn lại) được dùng trong bảng
+tổng hợp cho toàn bộ các biến đáp ứng ở phần sau của tài liệu này — nghĩa là hiệu ứng chỉ đạt
+ý nghĩa thống kê ở ngưỡng 0.05 trong một trong bốn cách đặc tả mô hình. Các kết luận rộng hơn —
+ethanol kéo dài thời gian chùng ứng suất, và tương tác không có ý nghĩa thống kê — vẫn đúng trên cả
+hai phiên bản, và mọi biến khác đều tái lập các giá trị đã công bố. Những phân tích vượt ra
+ngoài các nội dung trên — ma trận tương quan Pearson, PCA, MANOVA, ASCA, các mô hình đa đáp ứng,
+các đường Box–Cox và bề mặt đáp ứng bậc hai — là phần khảo sát khám phá đã hỗ trợ cho các công bố nhưng không xuất hiện trong đó.
+
+**Ghi chú về bản dịch.** Đây là bản tiếng Việt của tài liệu phân tích ([bản gốc tiếng Anh](./), [bản tiếng Nhật](ja.html)). Toàn bộ mã R được giữ nguyên từ bản gốc, nên mọi hình và bảng — kể cả nhãn trục, chú giải và tiêu đề cột — vẫn bằng tiếng Anh, trùng khớp với hai bài báo và với mã nguồn. Dấu thập phân dùng dấu chấm (ví dụ 0.24) để thống nhất với kết quả do R in ra.
+
+# Dữ liệu nghiên cứu
+
+## Nhập dữ liệu
+
+```{r import-data}
+# Read the data; the first column (ID) becomes row names, so samples keep their labels
+# in plots such as the labelled PCA biplots.
+nips <- read.csv("NIPS.csv", header = TRUE, row.names = 1)
+
+# Two representations of the same dataset are used in this document:
+#   dat  — SUS and EtOH stay numeric: the response-surface models need continuous
+#          predictors;
+#   nips — SUS and EtOH become factors: everywhere else the design levels are treated
+#          as discrete groups.
+dat <- nips
+
+nips$SUS  <- as.factor(nips$SUS)
+nips$EtOH <- as.factor(nips$EtOH)
+
+# Make the baseline explicit: the first (lowest) level of each factor is the reference
+# group that regression coefficients are contrasted against. (Level 1 is already the
+# default reference, so this is documentation more than transformation.)
+nips <- within(nips, SUS  <- relevel(SUS,  ref = 1))
+nips <- within(nips, EtOH <- relevel(EtOH, ref = 1))
+
+# head(nips)  # uncomment to preview the imported data
+```
+
+## Biểu đồ hộp tổng quan
+
+```{r overview-boxplots}
+# Quick overview of every response variable (SUS and EtOH excluded).
+# Left: raw values — scales differ wildly between variables.
+# Right: the same data standardised (z-scores), which makes spreads comparable
+# and helps to spot outliers on a common scale.
+resp_vars <- setdiff(names(nips), c("SUS", "EtOH"))
+par(cex.main = 1.4, font.lab = 2, cex.lab = 1.2)
+boxplot(nips[, resp_vars], main = "Box plot: raw values", ylab = "Raw value", col = "#C6DBEF", las = 2, cex.axis = 0.8)
+boxplot(scale(nips[, resp_vars], center = TRUE), main = "Box plot: standardized z-scores", ylab = "z-score", col = "#C6DBEF", las = 2, cex.axis = 0.8)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Biểu đồ hộp (boxplot) ở thang đo gốc chủ yếu cho thấy các thang đo khác nhau đến mức nào —
+`t3` và `T` trải rộng hàng trăm giây trong khi Density và các tham số ứng suất nằm sát 0 —
+và đó là lý do biểu đồ đã chuẩn hóa mới là biểu đồ giàu thông tin hơn. Cần lưu ý điều mà
+phép chuẩn hóa làm được và không làm được: nó buộc mọi biến về cùng một độ lệch chuẩn, nên
+*chiều cao* của hộp không còn cho biết biến đáp ứng nào biến thiên mạnh nhất. Điều mà chiều
+cao hộp thể hiện là hình dạng phân phối, vì một hộp trở nên cao so với độ lệch chuẩn (nay đã
+được cố định) khi dữ liệu trải về phía các tứ phân vị thay vì tập trung ở giữa — thường là
+dấu hiệu của nhiều nhóm điều kiện nằm ở các mức khác nhau, như với Density và Modulus ở
+đây. Đây cũng chính là cách hình dung đúng cho phân tích thành phần chính (PCA) ở phần sau,
+vốn cũng chuẩn hóa các biến trước khi trích xuất các thành phần.
+:::
+
+# Kiểm tra phân phối
+
+Các mô hình tuyến tính ở phần sau giả định phần dư có phân phối xấp xỉ chuẩn, vì vậy mỗi
+biến đáp ứng trước hết được sàng lọc về tính chuẩn.
+
+## Kiểm định Shapiro–Wilk
+
+H₀: mẫu được rút ra từ một phân phối chuẩn. Giá trị *P* **lớn hơn** 0.05 có nghĩa là dữ liệu
+không cho thấy sự sai lệch có ý nghĩa thống kê so với tính chuẩn (phù hợp với giả định phân
+phối chuẩn); giá trị *P* nhỏ hơn 0.05 báo hiệu có sự sai lệch.
+
+```{r shapiro-tests}
+shapiro.test(nips$Weight)
+shapiro.test(nips$Diameter)
+shapiro.test(nips$Height)
+shapiro.test(nips$Volume)
+shapiro.test(nips$Density)
+shapiro.test(nips$Porosity)
+shapiro.test(nips$Shrinkage)
+shapiro.test(nips$Recovery)
+shapiro.test(nips$Modulus)
+shapiro.test(nips$A0)
+shapiro.test(nips$A1)
+shapiro.test(nips$t1)
+shapiro.test(nips$A2)
+shapiro.test(nips$t2)
+shapiro.test(nips$A3)
+shapiro.test(nips$t3)
+shapiro.test(nips$T)
+shapiro.test(nips$RS)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Ở mức ý nghĩa 0.05, Weight, Density, Porosity, Modulus và phần lớn các tham số Maxwell
+(`A0`–`A3`, `t1`, `t2`) sai lệch có ý nghĩa thống kê so với phân phối chuẩn, trong khi
+Diameter, Height, Volume, Shrinkage, Recovery, `t3`, `T` và `RS` thì không. Có hai chi tiết
+đáng lưu ý. Thứ nhất, Density và Porosity cho ra đúng cùng một giá trị thống kê
+(*W* ≈ 0.908): Porosity là một phép biến đổi affine của Density, và kiểm định này bất biến
+đối với các phép biến đổi như vậy — điều tương tự cũng xảy ra với Volume và Shrinkage. Thứ
+hai, đây là các kiểm định trên phân phối *biên*, gộp chung cả chín nhóm điều kiện: một biến chịu ảnh hưởng mạnh của SUS (chẳng hạn Modulus) là hỗn hợp của ba nhóm tách biệt rõ rệt, nên phân
+phối gộp của nó trông đa đỉnh và “không đạt” kiểm định tính chuẩn ngay cả khi các phép đo
+trong từng điều kiện hoàn toàn không có vấn đề gì. Giả định thực sự quan trọng đối với các
+mô hình ở phần sau là tính chuẩn của *phần dư*, điều này được kiểm tra cho từng mô hình
+bằng các biểu đồ chẩn đoán.
+:::
+
+## Biểu đồ Q–Q chuẩn
+
+Đây là phiên bản trực quan của kiểm định Shapiro–Wilk: các điểm nằm dọc theo đường tham
+chiếu là phù hợp với tính chuẩn; độ cong có tính hệ thống cho thấy phân phối lệch (bất đối
+xứng), còn các điểm tách khỏi đường ở hai đầu cho thấy đuôi nặng hoặc giá trị ngoại lai.
+
+```{r qq-plots}
+par(mfrow = c(3, 6), cex.main = 1.6, font.axis = 2)   # 18 plots fill the 3 x 6 grid
+qqnorm(nips$Weight, main = "Weight"); qqline(nips$Weight, col = col_accent, lwd = 1.2)
+qqnorm(nips$Diameter, main = "Diameter"); qqline(nips$Diameter, col = col_accent, lwd = 1.2)
+qqnorm(nips$Height, main = "Height"); qqline(nips$Height, col = col_accent, lwd = 1.2)
+qqnorm(nips$Volume, main = "Volume"); qqline(nips$Volume, col = col_accent, lwd = 1.2)
+qqnorm(nips$Density, main = "Density"); qqline(nips$Density, col = col_accent, lwd = 1.2)
+qqnorm(nips$Porosity, main = "Porosity"); qqline(nips$Porosity, col = col_accent, lwd = 1.2)
+qqnorm(nips$Shrinkage, main = "Shrinkage"); qqline(nips$Shrinkage, col = col_accent, lwd = 1.2)
+qqnorm(nips$Recovery, main = "Recovery"); qqline(nips$Recovery, col = col_accent, lwd = 1.2)
+qqnorm(nips$Modulus, main = "Modulus"); qqline(nips$Modulus, col = col_accent, lwd = 1.2)
+qqnorm(nips$A0, main = "A0"); qqline(nips$A0, col = col_accent, lwd = 1.2)
+qqnorm(nips$A1, main = "A1"); qqline(nips$A1, col = col_accent, lwd = 1.2)
+qqnorm(nips$t1, main = "t1"); qqline(nips$t1, col = col_accent, lwd = 1.2)
+qqnorm(nips$A2, main = "A2"); qqline(nips$A2, col = col_accent, lwd = 1.2)
+qqnorm(nips$t2, main = "t2"); qqline(nips$t2, col = col_accent, lwd = 1.2)
+qqnorm(nips$A3, main = "A3"); qqline(nips$A3, col = col_accent, lwd = 1.2)
+qqnorm(nips$t3, main = "t3"); qqline(nips$t3, col = col_accent, lwd = 1.2)
+qqnorm(nips$T, main = "T"); qqline(nips$T, col = col_accent, lwd = 1.2)
+qqnorm(nips$RS, main = "RS"); qqline(nips$RS, col = col_accent, lwd = 1.2)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Các biểu đồ Q–Q kể lại cùng một câu chuyện dưới dạng đồ họa: những biến bị kiểm định
+Shapiro–Wilk đánh dấu (ví dụ Modulus, `A0`) uốn cong rời khỏi đường tham chiếu, nhất quán
+với cách giải thích về hỗn hợp nhóm ở trên, trong khi các biến như Height, Recovery và
+Shrinkage bám sát đường tham chiếu.
+:::
+
+## Phép biến đổi Box–Cox
+
+Đây là một phép kiểm tra bổ sung về phân phối của từng biến đáp ứng được mô hình hóa
+(`Weight`, biến chỉ tham gia phân tích thông qua Density = m/V, được bỏ qua). Hàm
+`boxcox()` khảo sát log-hợp lý (log-likelihood) theo tham số biến đổi lũy thừa λ cho mô
+hình `y^(λ) ~ 1` (λ = 1: không cần biến đổi; λ = 0: biến đổi logarit; λ = −1: nghịch đảo).
+Nếu khoảng tin cậy 95% quanh đỉnh chứa giá trị 1 thì biến chưa biến đổi là thỏa đáng. Lưu ý
+rằng phép biến đổi Box–Cox đòi hỏi dữ liệu dương ngặt.
+
+### Các đường log-hợp lý
+
+```{r boxcox-profiles}
+par(mfrow = c(3, 3))   # 17 profiles: rendered as two 3 x 3 pages
+boxcox(nips$Diameter ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Diameter", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Height ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Height", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Volume ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Volume", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Density ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Density", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Porosity ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Porosity", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Shrinkage ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Shrinkage", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Recovery ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Recovery", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Modulus ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Modulus", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A0 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A0", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$T ~ 1, lambda = seq(-8, 8, 0.1)); mtext("T", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$RS ~ 1, lambda = seq(-8, 8, 0.1)); mtext("RS", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+```
+
+### λ tối ưu cho từng biến đáp ứng
+
+Giá trị λ cực đại hóa từng đường log-hợp lý ở trên được tập hợp vào một bảng duy nhất.
+
+```{r boxcox-lambda}
+boxcox_vars <- c("Diameter", "Height", "Volume", "Density", "Porosity", "Shrinkage",
+                 "Recovery", "Modulus", "A0", "A1", "A2", "A3", "t1", "t2", "t3", "T", "RS")
+
+lambda_opt <- sapply(boxcox_vars, function(v) {
+  # boxcox() refits the model internally, so the response must be reachable from the
+  # formula's own environment — extract it into a local variable and use the formula
+  # interface (boxcox(y ~ 1)); boxcox(lm(nips[[v]] ~ 1)) breaks under knitting because
+  # the refit cannot see `v`.
+  y <- nips[[v]]
+  # The default search grid is lambda in [-2, 2]; several variables here peak outside it
+  # and would be silently reported at the boundary, so the grid is widened. Values still
+  # sitting at +/-8 below are bounds, not estimates.
+  prof <- boxcox(y ~ 1, lambda = seq(-8, 8, 0.1), plotit = FALSE)
+  prof$x[which.max(prof$y)]     # λ at the log-likelihood maximum
+})
+
+kable(data.frame(Variable = names(lambda_opt), `Optimal λ` = round(lambda_opt, 2),
+                 check.names = FALSE),
+      row.names = FALSE)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Giá trị λ tối ưu biến động rất mạnh giữa các biến đáp ứng, và đối với các đại lượng ứng
+suất (Modulus, `A0`–`A3`) nó nằm gần 0, tức tương ứng với một phép biến đổi logarit — điều
+không bất ngờ, vì các biến này tăng theo quy luật nhân với nồng độ huyền phù. Bảng này ẩn
+chứa một cảnh báo thực hành: theo mặc định `boxcox()` chỉ tìm kiếm trong λ ∈ [−2, 2], và
+một số biến ở đây đạt đỉnh ngoài cửa sổ đó — điều mà cài đặt mặc định sẽ báo cáo thành một
+con số “−2” hay “+2” gọn gàng thay vì chỉ ra rằng đó là biên của vùng tìm kiếm. Ở đây lưới
+tìm kiếm đã được mở rộng, và bất kỳ giá trị nào vẫn nằm ở các giới hạn mới cần được đọc là
+một cận chứ không phải một ước lượng. Các đường log-hợp lý này cũng mang cùng một lưu ý như
+các kiểm định Shapiro–Wilk: chúng được tính trên dữ liệu gộp (`y ~ 1`), nên phần lớn sự
+lệch khỏi tính chuẩn quan sát được là do chính thiết kế thí nghiệm yếu tố toàn phần (full
+factorial design) chứ không phải do độ lệch (bất đối xứng) trong từng điều kiện. Vì vậy,
+các phân tích trong tài liệu này giữ nguyên thang đo gốc — nơi các hệ số bảo toàn đơn vị
+vật lý của chúng — và dựa vào chẩn đoán phần dư cho từng mô hình; việc ước lượng lại các
+biến biên độ trên thang logarit là một bài tập hợp lý dành cho bạn đọc quan tâm.
+:::
+
+# Ảnh hưởng của các yếu tố I: phân phối theo mức yếu tố
+
+Phân phối của các biến đáp ứng theo từng mức yếu tố. Hộp thể hiện trung vị và khoảng
+tứ phân vị; các chấm chồng lên hộp là từng mẫu riêng lẻ, nhờ đó cỡ nhóm và độ phân tán
+đều có thể nhìn thấy ngay.
+
+```{r boxplot-theme}
+# Shared theme for all boxplot panels in this section (identical styling throughout).
+theme_box <- theme_pub + theme(aspect.ratio = 1, legend.position = "bottom")
+```
+
+## Biểu đồ hộp theo một yếu tố
+
+Mỗi biến đáp ứng được xét lần lượt theo từng yếu tố: panel A nhóm theo `SUS`, panel B nhóm theo `EtOH`.
+
+### Đường kính (Diameter)
+
+```{r box1f-diameter}
+p1.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Diameter (mm)")
+
+p2.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Diameter (mm)")
+
+plot_grid(p1.1, p2.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Chiều cao (Height)
+
+```{r box1f-height}
+p1.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Height (mm)")
+
+p2.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Height (mm)")
+
+plot_grid(p1.2, p2.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Thể tích (Volume)
+
+```{r box1f-volume}
+p1.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+p2.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+plot_grid(p1.3, p2.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Khối lượng riêng (Density)
+
+```{r box1f-density}
+p1.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+p2.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+plot_grid(p1.4, p2.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ xốp (Porosity)
+
+```{r box1f-porosity}
+p1.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Porosity (%)")
+
+p2.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Porosity (%)")
+
+plot_grid(p1.5, p2.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ co ngót (Shrinkage)
+
+```{r box1f-shrinkage}
+p1.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Shrinkage (%)")
+
+p2.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Shrinkage (%)")
+
+plot_grid(p1.6, p2.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ phục hồi (Recovery)
+
+```{r box1f-recovery}
+p1.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Recovery (%)")
+
+p2.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Recovery (%)")
+
+plot_grid(p1.7, p2.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Mô đun (Modulus)
+
+```{r box1f-modulus}
+p1.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
+
+p2.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
+
+plot_grid(p1.8, p2.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A0
+
+```{r box1f-a0}
+p1.9 <- ggplot(nips, aes(x = SUS, y = A0)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
+
+p2.9 <- ggplot(nips, aes(x = EtOH, y = A0)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
+
+plot_grid(p1.9, p2.9, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A1
+
+```{r box1f-a1}
+p1.10 <- ggplot(nips, aes(x = SUS, y = A1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
+
+p2.10 <- ggplot(nips, aes(x = EtOH, y = A1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
+
+plot_grid(p1.10, p2.10, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t1
+
+```{r box1f-t1}
+p1.11 <- ggplot(nips, aes(x = SUS, y = t1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
+
+p2.11 <- ggplot(nips, aes(x = EtOH, y = t1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
+
+plot_grid(p1.11, p2.11, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A2
+
+```{r box1f-a2}
+p1.12 <- ggplot(nips, aes(x = SUS, y = A2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
+
+p2.12 <- ggplot(nips, aes(x = EtOH, y = A2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
+
+plot_grid(p1.12, p2.12, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t2
+
+```{r box1f-t2}
+p1.13 <- ggplot(nips, aes(x = SUS, y = t2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
+
+p2.13 <- ggplot(nips, aes(x = EtOH, y = t2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
+
+plot_grid(p1.13, p2.13, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A3
+
+```{r box1f-a3}
+p1.14 <- ggplot(nips, aes(x = SUS, y = A3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
+
+p2.14 <- ggplot(nips, aes(x = EtOH, y = A3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
+
+plot_grid(p1.14, p2.14, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t3
+
+```{r box1f-t3}
+p1.15 <- ggplot(nips, aes(x = SUS, y = t3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
+
+p2.15 <- ggplot(nips, aes(x = EtOH, y = t3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
+
+plot_grid(p1.15, p2.15, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### T
+
+```{r box1f-bigT}
+# Note: inside aes(), `T` refers to the data column T (data masking), not to TRUE.
+p1.16 <- ggplot(nips, aes(x = SUS, y = T)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
+
+p2.16 <- ggplot(nips, aes(x = EtOH, y = T)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
+
+plot_grid(p1.16, p2.16, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## Biểu đồ hộp theo hai yếu tố
+
+Cả hai yếu tố được thể hiện đồng thời: một yếu tố nằm trên trục x, yếu tố còn lại được
+thể hiện bằng màu tô (và hoán đổi vai trò cho nhau ở panel thứ hai). Kiểu biến đổi song
+song giữa các nhóm gợi ý các hiệu ứng cộng tính; kiểu cắt chéo nhau gợi ý khả năng có tương tác.
+
+### Đường kính (Diameter)
+
+```{r box2f-diameter}
+p3.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Diameter (mm)")
+
+p4.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Diameter (mm)")
+
+plot_grid(p3.1, p4.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Chiều cao (Height)
+
+```{r box2f-height}
+p3.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Height (mm)")
+
+p4.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Height (mm)")
+
+plot_grid(p3.2, p4.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Thể tích (Volume)
+
+```{r box2f-volume}
+p3.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+p4.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+plot_grid(p3.3, p4.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Khối lượng riêng (Density)
+
+```{r box2f-density}
+p3.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+p4.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+plot_grid(p3.4, p4.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ xốp (Porosity)
+
+```{r box2f-porosity}
+p3.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Porosity (%)")
+
+p4.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Porosity (%)")
+
+plot_grid(p3.5, p4.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ co ngót (Shrinkage)
+
+```{r box2f-shrinkage}
+p3.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Shrinkage (%)")
+
+p4.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Shrinkage (%)")
+
+plot_grid(p3.6, p4.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Độ phục hồi (Recovery)
+
+```{r box2f-recovery}
+p3.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Recovery (%)")
+
+p4.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Recovery (%)")
+
+plot_grid(p3.7, p4.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### Mô đun (Modulus)
+
+```{r box2f-modulus}
+p3.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
+
+p4.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
+
+plot_grid(p3.8, p4.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+::: {.interpretation}
+**Các biểu đồ này cho thấy điều gì.**
+
+Đọc lần lượt các panel một yếu tố qua các biến đáp ứng, có thể thấy hai yếu tố phân chia
+vai trò cho nhau. Nồng độ huyền phù chủ yếu quyết định *lượng vật liệu* có mặt trong mẫu
+xốp: khối lượng riêng (Density) và mô đun (Modulus) tăng mạnh theo SUS, và các biên độ
+ứng suất `A0`–`A3` cũng tăng theo. Nồng độ ethanol chủ yếu ảnh hưởng đến *cách cấu trúc
+hình thành trong quá trình đóng băng*: đường kính (Diameter) tăng và độ co ngót (Shrinkage)
+giảm khi EtOH tăng, còn các đại lượng liên quan đến sự chùng ứng suất (stress relaxation)
+có mặt ở đây (`T`, Recovery) đều dịch chuyển lên cao hơn. (`RS` biến đổi theo cùng kiểu,
+nhưng không có panel trong loạt biểu đồ này — phần hồi quy sẽ định lượng nó.) Chiều cao
+(Height) tăng theo cả hai yếu tố, mặc dù xu hướng theo EtOH của nó chưa đạt mức ý nghĩa
+thống kê trong mô hình bên dưới (*P* = 0.066). Ở các panel hai yếu tố, kiểu hộp gần như
+song song gợi ý hành vi cộng tính đối với phần lớn các biến đáp ứng, trong khi với mô đun
+(Modulus) hiệu ứng của EtOH trông khác biệt rõ rệt ở từng mức SUS — báo trước tương tác
+SUS × EtOH có ý nghĩa thống kê sẽ được tìm thấy ở phần tiếp theo. Các kiểm định chính thức
+sẽ gắn giá trị *P* cho từng nhận định trực quan này (các biến đáp ứng hình học được thảo
+luận trong bài báo trên ACS Omega, các biến cơ học trong bài báo trên Polymer Journal).
+:::
+
+# Ảnh hưởng của các yếu tố II: hồi quy & ANOVA
+
+Những ấn tượng trực quan từ loạt biểu đồ hộp (boxplot) được định lượng tại đây bằng các
+mô hình tuyến tính trên phiên bản dữ liệu ở dạng yếu tố (factor).
+
+## Mô hình tuyến tính & ANOVA cho từng biến đáp ứng
+
+Mỗi biến đáp ứng được mô hình hóa dưới dạng `response ~ SUS + EtOH`, tức là một mô hình
+cộng tính hai yếu tố trong đó cả hai yếu tố đều là biến phân loại. Với mỗi biến đáp ứng,
+bốn kết quả được trình bày:
+
+- `summary()` — các ước lượng hệ số (mỗi mức được đối chiếu với mức tham chiếu),
+  ý nghĩa thống kê của chúng, và hệ số xác định *R*² của mô hình.
+- `anova()` — bảng phân tích phương sai (ANOVA) kiểm định hiệu ứng tổng thể của từng yếu tố.
+- Hai bảng trên được trình bày lại bằng `tidy()`/`kable()` thành các bảng gọn gàng,
+  sẵn sàng đưa vào công bố.
+- Các biểu đồ chẩn đoán chuẩn (residuals vs fitted, normal Q–Q, scale–location, residuals vs
+  leverage) để kiểm tra các giả định của mô hình.
+
+Hai lưu ý giúp đọc các bảng bên dưới. *Bậc tự do*: mỗi yếu tố có ba mức nên mang 2 df;
+mô hình cộng tính để lại 40 − 1 − 2 − 2 = 35 df phần dư, còn các mô hình có tương tác
+thêm số hạng `SUS:EtOH` với 4 df, để lại 31. *Hệ số*: với cách mã hóa mặc định của R
+(treatment coding), một hệ số như `SUS0.3` là chênh lệch ước lượng giữa nhóm 0.3 wt% và
+mức tham chiếu 0.24 wt% tại một mức ethanol cố định, còn hệ số chặn là giá trị đáp ứng
+dự đoán khi cả hai yếu tố cùng ở mức tham chiếu (SUS 0.24, EtOH 0.2 wt%) — chứ không
+phải trung bình chung.
+
+Với một số biến đáp ứng chọn lọc, một mô hình thứ hai bổ sung tương tác `SUS:EtOH` để
+kiểm định xem hiệu ứng của yếu tố này có phụ thuộc vào mức của yếu tố kia hay không.
+(Theo cú pháp công thức của R, `SUS + EtOH + SUS*EtOH` khai triển thành các hiệu ứng
+chính cộng với số hạng tương tác — tương đương với `SUS*EtOH`.) Bốn biến đáp ứng được
+phân tích với tương tác trong bài báo Polymer Journal (Bảng S2) là Modulus, RS, T và
+Recovery; còn các mô hình cộng tính cho Height, Diameter, Shrinkage và Density là những
+mô hình đã công bố trong ACS Omega (Bảng 1, các Bảng S2–S5).
+
+### Đường kính (Diameter)
+
+```{r lm-diameter}
+mod1 <- lm(nips$Diameter ~ SUS + EtOH, data = nips)
+mod1 %>% summary()
+mod1 %>% anova()
+mod1 %>% tidy() %>% kable(digits = 3)
+mod1 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-diameter-diag}
+par(mfrow = c(2, 2))
+mod1 %>% plot()
+```
+
+### Chiều cao (Height)
+
+```{r lm-height}
+mod2 <- lm(nips$Height ~ SUS + EtOH, data = nips)
+mod2 %>% summary()
+mod2 %>% anova()
+mod2 %>% tidy() %>% kable(digits = 3)
+mod2 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-height-diag}
+par(mfrow = c(2, 2))
+mod2 %>% plot()
+```
+
+### Thể tích (Volume)
+
+```{r lm-volume}
+mod3 <- lm(nips$Volume ~ SUS + EtOH, data = nips)
+mod3 %>% summary()
+mod3 %>% anova()
+mod3 %>% tidy() %>% kable(digits = 3)
+mod3 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-volume-diag}
+par(mfrow = c(2, 2))
+mod3 %>% plot()
+```
+
+### Khối lượng riêng (Density)
+
+```{r lm-density}
+mod4 <- lm(nips$Density ~ SUS + EtOH, data = nips)
+mod4 %>% summary()
+mod4 %>% anova()
+mod4 %>% tidy() %>% kable(digits = 3)
+mod4 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-density-diag}
+par(mfrow = c(2, 2))
+mod4 %>% plot()
+```
+
+### Độ xốp (Porosity)
+
+```{r lm-porosity}
+mod5 <- lm(nips$Porosity ~ SUS + EtOH, data = nips)
+mod5 %>% summary()
+mod5 %>% anova()
+mod5 %>% tidy() %>% kable(digits = 3)
+mod5 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-porosity-diag}
+par(mfrow = c(2, 2))
+mod5 %>% plot()
+```
+
+### Độ co ngót (Shrinkage)
+
+```{r lm-shrinkage}
+mod6 <- lm(nips$Shrinkage ~ SUS + EtOH, data = nips)
+mod6 %>% summary()
+mod6 %>% anova()
+mod6 %>% tidy() %>% kable(digits = 3)
+mod6 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-shrinkage-diag}
+par(mfrow = c(2, 2))
+mod6 %>% plot()
+```
+
+### Độ phục hồi (Recovery)
+
+```{r lm-recovery}
+mod7 <- lm(nips$Recovery ~ SUS + EtOH, data = nips)
+mod7 %>% summary()
+mod7 %>% anova()
+mod7 %>% tidy() %>% kable(digits = 3)
+mod7 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-recovery-diag}
+par(mfrow = c(2, 2))
+mod7 %>% plot()
+```
+
+#### Độ phục hồi (Recovery) — mô hình có tương tác
+
+```{r lm-recovery-int}
+mod7a <- lm(nips$Recovery ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod7a %>% summary()
+mod7a %>% anova()
+mod7a %>% tidy() %>% kable(digits = 3)
+mod7a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-recovery-int-diag}
+par(mfrow = c(2, 2))
+mod7a %>% plot()
+```
+
+### Mô đun (Modulus)
+
+```{r lm-modulus}
+mod8 <- lm(nips$Modulus ~ SUS + EtOH, data = nips)
+mod8 %>% summary()
+mod8 %>% anova()
+mod8 %>% tidy() %>% kable(digits = 3)
+mod8 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-modulus-diag}
+par(mfrow = c(2, 2))
+mod8 %>% plot()
+```
+
+#### Mô đun (Modulus) — mô hình có tương tác
+
+```{r lm-modulus-int}
+mod8a <- lm(nips$Modulus ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod8a %>% summary()
+mod8a %>% anova()
+mod8a %>% tidy() %>% kable(digits = 3)
+mod8a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-modulus-int-diag}
+par(mfrow = c(2, 2))
+mod8a %>% plot()
+```
+
+### A0
+
+```{r lm-a0}
+mod9 <- lm(nips$A0 ~ SUS + EtOH, data = nips)
+mod9 %>% summary()
+mod9 %>% anova()
+mod9 %>% tidy() %>% kable(digits = 3)
+mod9 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a0-diag}
+par(mfrow = c(2, 2))
+mod9 %>% plot()
+```
+
+#### A0 — mô hình có tương tác
+
+```{r lm-a0-int}
+mod9a <- lm(nips$A0 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod9a %>% summary()
+mod9a %>% anova()
+mod9a %>% tidy() %>% kable(digits = 3)
+mod9a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a0-int-diag}
+par(mfrow = c(2, 2))
+mod9a %>% plot()
+```
+
+### A1
+
+```{r lm-a1}
+mod10 <- lm(nips$A1 ~ SUS + EtOH, data = nips)
+mod10 %>% summary()
+mod10 %>% anova()
+mod10 %>% tidy() %>% kable(digits = 3)
+mod10 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a1-diag}
+par(mfrow = c(2, 2))
+mod10 %>% plot()
+```
+
+### t1
+
+```{r lm-t1}
+mod11 <- lm(nips$t1 ~ SUS + EtOH, data = nips)
+mod11 %>% summary()
+mod11 %>% anova()
+mod11 %>% tidy() %>% kable(digits = 3)
+mod11 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t1-diag}
+par(mfrow = c(2, 2))
+mod11 %>% plot()
+```
+
+#### t1 — mô hình có tương tác
+
+```{r lm-t1-int}
+mod11a <- lm(nips$t1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod11a %>% summary()
+mod11a %>% anova()
+mod11a %>% tidy() %>% kable(digits = 3)
+mod11a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t1-int-diag}
+par(mfrow = c(2, 2))
+mod11a %>% plot()
+```
+
+### A2
+
+```{r lm-a2}
+mod12 <- lm(nips$A2 ~ SUS + EtOH, data = nips)
+mod12 %>% summary()
+mod12 %>% anova()
+mod12 %>% tidy() %>% kable(digits = 3)
+mod12 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a2-diag}
+par(mfrow = c(2, 2))
+mod12 %>% plot()
+```
+
+### t2
+
+```{r lm-t2}
+mod13 <- lm(nips$t2 ~ SUS + EtOH, data = nips)
+mod13 %>% summary()
+mod13 %>% anova()
+mod13 %>% tidy() %>% kable(digits = 3)
+mod13 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t2-diag}
+par(mfrow = c(2, 2))
+mod13 %>% plot()
+```
+
+#### t2 — mô hình có tương tác
+
+```{r lm-t2-int}
+mod13a <- lm(nips$t2 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod13a %>% summary()
+mod13a %>% anova()
+mod13a %>% tidy() %>% kable(digits = 3)
+mod13a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t2-int-diag}
+par(mfrow = c(2, 2))
+mod13a %>% plot()
+```
+
+### A3
+
+```{r lm-a3}
+mod14 <- lm(nips$A3 ~ SUS + EtOH, data = nips)
+mod14 %>% summary()
+mod14 %>% anova()
+mod14 %>% tidy() %>% kable(digits = 3)
+mod14 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a3-diag}
+par(mfrow = c(2, 2))
+mod14 %>% plot()
+```
+
+### t3
+
+```{r lm-t3}
+mod15 <- lm(nips$t3 ~ SUS + EtOH, data = nips)
+mod15 %>% summary()
+mod15 %>% anova()
+mod15 %>% tidy() %>% kable(digits = 3)
+mod15 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t3-diag}
+par(mfrow = c(2, 2))
+mod15 %>% plot()
+```
+
+#### t3 — mô hình có tương tác
+
+```{r lm-t3-int}
+mod15a <- lm(nips$t3 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod15a %>% summary()
+mod15a %>% anova()
+mod15a %>% tidy() %>% kable(digits = 3)
+mod15a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t3-int-diag}
+par(mfrow = c(2, 2))
+mod15a %>% plot()
+```
+
+### T
+
+```{r lm-bigT}
+mod16 <- lm(nips$T ~ SUS + EtOH, data = nips)
+mod16 %>% summary()
+mod16 %>% anova()
+mod16 %>% tidy() %>% kable(digits = 3)
+mod16 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-bigT-diag}
+par(mfrow = c(2, 2))
+mod16 %>% plot()
+```
+
+#### T — mô hình có tương tác
+
+```{r lm-bigT-int}
+mod16a <- lm(nips$T ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod16a %>% summary()
+mod16a %>% anova()
+mod16a %>% tidy() %>% kable(digits = 3)
+mod16a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-bigT-int-diag}
+par(mfrow = c(2, 2))
+mod16a %>% plot()
+```
+
+### Ứng suất dư (RS)
+
+```{r lm-rs}
+mod17 <- lm(nips$RS ~ SUS + EtOH, data = nips)
+mod17 %>% summary()
+mod17 %>% anova()
+mod17 %>% tidy() %>% kable(digits = 3)
+mod17 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-rs-diag}
+par(mfrow = c(2, 2))
+mod17 %>% plot()
+```
+
+#### Ứng suất dư (RS) — mô hình có tương tác
+
+```{r lm-rs-int}
+mod17a <- lm(nips$RS ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod17a %>% summary()
+mod17a %>% anova()
+mod17a %>% tidy() %>% kable(digits = 3)
+mod17a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-rs-int-diag}
+par(mfrow = c(2, 2))
+mod17a %>% plot()
+```
+
+### Tóm tắt ảnh hưởng của các yếu tố
+
+Các bảng ANOVA riêng lẻ ở trên được cô đọng tại đây thành một bản đồ chung: giá trị *P*
+của mô hình cộng tính cho cả hai yếu tố, cùng mức độ phù hợp của mô hình, trên toàn bộ
+các biến đáp ứng.
+
+```{r factor-effect-summary}
+resp_models <- list(
+  Diameter = mod1, Height = mod2, Volume = mod3, Density = mod4, Porosity = mod5,
+  Shrinkage = mod6, Recovery = mod7, Modulus = mod8, A0 = mod9, A1 = mod10, t1 = mod11,
+  A2 = mod12, t2 = mod13, A3 = mod14, t3 = mod15, T = mod16, RS = mod17)
+
+# Type II sums of squares (car::Anova) rather than the sequential Type I of anova():
+# the replicate counts are unequal (4-7 per cell), so the two factors are not quite
+# orthogonal and sequential tests would depend on the order of the terms — the factor
+# entered first would be credited with the shared variation. Type II tests each factor
+# adjusted for the other, which is what this side-by-side comparison needs.
+# (The individual tables above keep anova() so that they match the published analyses.)
+pmap <- t(sapply(resp_models, function(m) {
+  a <- car::Anova(m, type = 2)
+  c(a$`Pr(>F)`[1], a$`Pr(>F)`[2], summary(m)$r.squared)
+}))
+fmt_p <- function(p) ifelse(p < 1e-4, "< 0.0001", sprintf("%.4f", p))
+kable(data.frame(`SUS (*P*)` = fmt_p(pmap[, 1]), `EtOH (*P*)` = fmt_p(pmap[, 2]),
+                 `*R*²` = sprintf("%.3f", pmap[, 3]),
+                 row.names = rownames(pmap), check.names = FALSE),
+      align = "rrr")
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Bản đồ này cho thấy một sự phân chia vai trò khá tổng quát. SUS chi phối mặt lượng vật liệu:
+Density, Porosity, Modulus và cả bốn biên độ ứng suất `A0`–`A3` đều đáp ứng với yếu tố
+này ở mức *P* < 0.001 — nhiều polymer hơn trong mỗi đơn vị thể tích tạo ra thành lỗ xốp dày hơn và mạng lưới cứng hơn. Các mô hình hai yếu tố giải thích tốt những biến đáp ứng
+này (*R*² từ 0.79 với `A0` đến 0.96 với Modulus), trong đó riêng SUS đã gánh phần lớn
+(với Modulus, *R*² = 0.92 chỉ từ nồng độ huyền phù). EtOH chi phối phía hình thành cấu
+trúc: Diameter, Volume/Shrinkage, Recovery và `RS` đều biến đổi theo ethanol ở mức
+*P* < 0.05 trong khi không phát hiện được hiệu ứng SUS nào. Trong các biến đáp
+ứng liên quan đến hình dạng (Diameter, Height, Volume/Shrinkage), Height là biến chịu
+sự chi phối chủ yếu của SUS (*P* = 0.001). Các thang thời gian chùng ứng suất (`t1`–`t3`, `T`)
+nằm trong số các biến được mô hình giải thích kém nhất của bảng (*R*² từ 0.17 đến 0.29): với `t3` và `T`,
+ethanol đạt ý nghĩa thống kê (*P* ≈ 0.03) còn SUS chỉ vừa không đạt (*P* ≈ 0.08), còn với
+`t1` và `t2` thì không yếu tố nào đạt, nên không yếu tố nào kiểm soát các thang thời gian
+này một cách mạnh mẽ — lưu ý rằng phân tích trong Polymer Journal, thực hiện trên các giá trị τ từ phép
+khớp Maxwell trước đây, lại tìm thấy một hiệu ứng SUS có ý nghĩa rõ rệt ở đó — một
+trong những điểm mà phép khớp trước đây và bộ dữ liệu này khác biệt.
+
+Hai điểm cần thận trọng khi đọc bảng này. Thứ nhất, cột SUS ở đây dùng kiểm định kiểu II
+nên khác với các giá trị tuần tự (kiểu I) in trong các bảng riêng lẻ phía trên — các
+bảng đó được giữ nguyên dạng để khớp với các phân tích đã công bố; `T` là ví dụ rõ nhất
+(0.080 ở đây so với 0.051 ở trên). Ngược lại, cột EtOH giống hệt nhau ở cả hai nơi —
+EtOH được đưa vào sau cùng trong các phép khớp tuần tự, nên tổng bình phương kiểu I của
+nó vốn đã được hiệu chỉnh theo SUS. Bản thân sự trùng hợp này là một minh họa hữu ích
+cho ý nghĩa của chữ "tuần tự". Thứ hai, đây là các kiểm định tổng thể (omnibus) với
+2 bậc tự do cho cả một yếu tố, trong khi các bảng đã công bố báo cáo các tương phản
+theo từng mức riêng lẻ, vốn có thể đạt ý nghĩa thống kê ngay cả khi kiểm định tổng thể
+thì không — hiệu ứng của ethanol lên Height là có ý nghĩa dưới dạng tương phản
+EtOH = 1 wt% trong Bảng S2 của ACS Omega (*P* = 0.021) trong khi kiểm định ở cấp toàn
+yếu tố tại đây cho *P* = 0.066, bởi vì kiểm định tổng thể gộp tương phản đó với tương phản EtOH = 0.5 wt% vốn gần như bằng 0. Điều tương tự áp dụng cho Shrinkage và Volume:
+kiểm định SUS toàn yếu tố ở trên cho *P* = 0.11 dù tương phản SUS = 0.3 wt% đạt
+*P* = 0.049 trong Bảng S4 của ACS Omega — vì vậy "không phát hiện được hiệu ứng SUS nào"
+trong bảng này có nghĩa là không có hiệu ứng ở cấp *toàn yếu tố*, chứ không phải là
+không tồn tại bất kỳ tương phản riêng lẻ nào. Không phân tích nào sai cả; chúng trả lời
+những câu hỏi khác nhau, và các bảng đã công bố báo cáo các tương phản.
+
+Có hai đồng nhất thức cài sẵn trong dữ liệu đáng được nhận ra: Porosity là một phép biến
+đổi affine của Density, và Shrinkage là phép biến đổi affine của Volume, nên mỗi cặp tất
+yếu có kết quả kiểm định giống hệt nhau.
+
+Cuối cùng, các mô hình có tương tác ở trên bổ sung một điểm tinh tế: Modulus
+(*P* = 0.0002) và ứng suất cân bằng `A0` (*P* = 0.001) cho thấy tương tác SUS × EtOH có
+ý nghĩa thống kê, trong khi Recovery, `RS`, `T` và ba thời gian chùng ứng suất thì
+không. Với Modulus, tương tác dễ nhận thấy nhất qua các trung bình nhóm: tăng ethanol từ
+0.2 lên 0.5 wt% làm mô đun giảm khoảng một nửa tại SUS 0.24 wt% (3.7 → 1.7 kPa) nhưng
+hầu như không làm thay đổi nó tại SUS 0.4 wt% (10.6 → 10.5 kPa). Nói cách khác, mức suy
+giảm do ethanol gây ra không phải là một mức giảm cố định — thành lỗ xốp dày hơn đã
+hấp thụ phần lớn ảnh hưởng này — và đây chính xác là điều mà một mô hình cộng tính không
+thể biểu diễn.
+:::
+
+# Tương quan giữa các biến đáp ứng
+
+Mối liên hệ từng cặp giữa các biến đáp ứng được chọn. Mỗi hình ghép (panel) hiển thị
+các biểu đồ phân tán (phía dưới đường chéo), biểu đồ tần suất (histogram) của từng biến
+kèm đường mật độ (trên đường chéo), và các hệ số tương quan kèm dấu sao chỉ mức ý nghĩa
+thống kê (phía trên đường chéo): \*\*\* p < 0.001, \*\* p < 0.01,
+\* p < 0.05.
+
+## Pearson
+
+Hệ số tương quan Pearson *r* đo lường mối liên hệ **tuyến tính** và được dùng ở đây cho tập biến rộng hơn.
+
+```{r pearson-panel}
+# Variables entering the Pearson panel (selection used in the papers).
+vars_pearson <- c("Density", "Shrinkage", "Recovery", "Modulus", "A0", "t1", "t2", "t3", "T")
+
+pairs.panels(
+  nips[, vars_pearson],
+  pch = 21,
+  cex.cor = 1.2,     # size of the correlation labels
+  gap = 0.5,
+  scale = FALSE,     # do not scale label size by correlation strength
+  density = TRUE,    # add density curves to the diagonal histograms
+  ellipses = FALSE,
+  lm = FALSE,
+  smooth = FALSE,
+  main = "Pearson_Correlation_Analysis",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
+  stars = TRUE       # significance stars next to the coefficients
+)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Ba khối biến nổi bật lên. Khối lượng riêng (Density), mô đun (Modulus) và các đại lượng
+ứng suất tạo thành một nhóm gắn kết chặt chẽ (Density–Modulus r = 0.96, Modulus–`A0` r = 0.87):
+mẫu xốp càng đặc thì càng cứng và mỗi nhánh Maxwell càng chịu nhiều ứng suất hơn. Ba
+thời gian chùng ứng suất tạo thành khối thứ hai (`t1`–`t2` và `t2`–`t3` đều có r = 0.83),
+khối này chỉ liên hệ yếu và theo chiều âm với khối thứ nhất (r trong khoảng chừng từ −0.2 đến −0.5):
+các mẫu xốp đặc và cứng có xu hướng chùng ứng suất nhanh hơn đôi chút. Còn `T` về cơ bản
+cộng tuyến với `t3` (r = 1.00) — điều này đúng ngay từ cách xây dựng đại lượng, vì
+T = t1 + t2 + t3 và t3 lớn hơn t1 tới hai bậc độ lớn. Shrinkage (độ co ngót) và
+Recovery (độ phục hồi) chỉ tương quan yếu với phần còn lại của hình ghép (|r| ≤ 0.33) —
+dấu hiệu đầu tiên cho thấy khả năng phục hồi không phải là sản phẩm phụ của độ cứng.
+:::
+
+## Spearman
+
+Hệ số tương quan Spearman ρ dựa trên hạng, nên nắm bắt được các mối quan hệ
+**đơn điệu** (không nhất thiết tuyến tính) và ít bị ảnh hưởng bởi giá trị ngoại lai.
+Ở đây chỉ xét một tập biến rút gọn. (Lưu ý: hình Spearman đã công bố — Hình S6
+của Polymer Journal — dùng tập con `Modulus`, `RS`, `T`, `Recovery`; hình ghép
+bên dưới là biến thể trong kho lưu trữ (repository) của phân tích đó.)
+
+```{r spearman-panel}
+# Variables entering the Spearman panel and the exported matrices below.
+# The published figure (Polymer Journal Fig. S6) used c("Modulus", "RS", "T", "Recovery").
+vars_spearman <- c("Density", "Recovery", "Modulus", "A0", "T")
+
+pairs.panels(
+  nips[, vars_spearman],
+  method = "spearman",
+  pch = 21,
+  cex.cor = 1,
+  gap = 0.5,
+  scale = FALSE,
+  density = TRUE,
+  ellipses = FALSE,
+  lm = FALSE,
+  smooth = FALSE,
+  main = "Spearman_Correlation",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
+  stars = TRUE
+)
+```
+
+```{r spearman-export}
+# Spearman correlation matrix for the same variable set...
+correlation_matrix <- cor(nips[, vars_spearman], method = "spearman")
+
+# ...and the matching matrix of p-values. cor() alone does not return p-values,
+# so this helper runs cor.test() on every variable pair and collects the results
+# into a symmetric matrix (diagonal = 0 by convention).
+cor.mtest <- function(mat, ...) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], method = "spearman", ...)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  p.mat
+}
+
+p_matrix <- cor.mtest(nips[, vars_spearman])
+
+decimal_places <- 3
+rounded_correlation_matrix <- round(correlation_matrix, decimal_places)
+rounded_p_matrix <- round(p_matrix, decimal_places)
+rounded_correlation_matrix
+rounded_p_matrix
+
+# Side effect: export both matrices as CSV files next to this document
+# (used for the papers' supplementary tables).
+write.csv(rounded_correlation_matrix, "spearman_correlation_matrix.csv")
+write.csv(rounded_p_matrix, "spearman_p_matrix.csv")
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Trên thang hạng, cùng một cấu trúc lại xuất hiện — Density–Modulus ρ = 0.93,
+Modulus–`A0` ρ = 0.84 — cùng với một mối quan hệ mà góc nhìn Pearson đánh giá thấp: Recovery
+tương quan dương với `T` (ρ = 0.48) mặc dù không liên hệ với Modulus
+(ρ = −0.09). Những mẫu xốp chùng ứng suất chậm hơn phục hồi được nhiều chiều cao hơn sau
+khi bị nén kéo dài, trong khi độ cứng hoàn toàn không đem lại khả năng phục hồi; bài báo trên
+Polymer Journal được xây dựng trên chính sự tương phản này (Hình S6 của bài báo dùng tập con
+Modulus, `RS`, `T`, Recovery, trong đó mối liên hệ mạnh nhất là Recovery–`RS`,
+ρ = 0.82 — `RS` không nằm trong hình ghép in phía trên). Các tệp CSV được xuất ra
+chứa ma trận này cùng với các giá trị *P* tương ứng.
+:::
+
+# Phân tích đa biến
+
+Các biến đáp ứng có liên quan lẫn nhau, nên phần này phân tích chúng một cách đồng thời:
+phân tích thành phần chính cô đọng tám biến cơ học thành một vài thành phần không tương
+quan, hồi quy đa đáp ứng và MANOVA kiểm định hiệu ứng của các yếu tố lên nhiều biến đáp
+ứng cùng lúc, và bản thân các điểm thành phần cũng được hồi quy theo các yếu tố.
+
+## Phân tích thành phần chính (PCA)
+
+Phân tích thành phần chính (PCA) đối với **các biến cơ học/chùng ứng suất (stress
+relaxation)** — mô đun cùng các tham số của phép khớp hàm mũ. PCA biểu diễn lại các biến
+tương quan với nhau dưới dạng một số ít thành phần không tương quan, cho thấy những tính
+chất nào biến thiên cùng nhau và các mẫu phân tách theo điều kiện chế tạo như thế nào.
+Các biến được chuẩn hóa tự động bên trong hàm `PCA()`.
+
+```{r pca-fit}
+# Variables entering the PCA (8 variables → at most 8 components).
+vars_pca <- c("Modulus", "A0", "A1", "t1", "A2", "t2", "A3", "t3")
+res.pca <- PCA(nips[, vars_pca], graph = FALSE, ncp = 8)
+
+# Eigenvalues: variance explained by each component.
+eig <- as.data.frame(res.pca[["eig"]])
+eig
+
+# Variable coordinates (loadings) on the components.
+coord <- as.data.frame(res.pca[["var"]][["coord"]])
+coord
+
+# Contribution (%) of each variable to each component.
+contrib <- as.data.frame(res.pca[["var"]][["contrib"]])
+contrib
+
+# Squared cosines: quality of representation of each variable on each component.
+cos2 <- as.data.frame(res.pca[["var"]][["cos2"]])
+cos2
+
+# Individual (sample) coordinates, i.e. the PC scores — reused later for
+# regression on principal components.
+coord_ind <- as.data.frame(res.pca[["ind"]][["coord"]])
+coord_ind
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Các biến cơ học có độ dư thừa (trùng lặp thông tin) rất cao: chỉ riêng thành phần thứ
+nhất đã giải thích 65.8% phương sai chung của chúng và hai thành phần đầu giải thích
+89.2%, nghĩa là tám đại lượng đo được thực chất chỉ mang khoảng hai phần thông tin độc
+lập. Các thành phần cuối gần bằng không (dưới 0.1%) là mặt còn lại của chính sự dư thừa
+đó, và một phần của nó vốn nằm sẵn trong cách định nghĩa chứ không phải là điều được
+khám phá — xem phần chẩn đoán PC7/PC8 bên dưới. Tọa độ của các biến cho thấy ý nghĩa của
+hai thành phần lớn: cả năm đại lượng ứng suất đều hướng cùng chiều trên trục Dim.1
+(Modulus 0.94, `A1` 0.96, `A2` 0.93, `A3` 0.92, `A0` 0.75), trong khi các thời gian
+chùng ứng suất phân chia giữa một phần âm trên Dim.1 và phần chủ yếu trên Dim.2
+(0.61–0.75) — nói ngắn gọn, một trục "độ mạnh" và một trục "độ chậm".
+:::
+
+### Biểu đồ scree và bản đồ biến
+
+Biểu đồ scree cho biết mỗi thành phần giải thích bao nhiêu phương sai — các thành phần
+đứng trước "điểm khuỷu" (elbow) tóm lược phần lớn cấu trúc của dữ liệu. Biểu đồ tương
+quan biến (bản đồ hệ số tải) đặt mỗi biến theo tương quan của nó với PC1 và PC2; các
+biến hướng cùng chiều thì tương quan dương với nhau, và màu sắc mã hóa chất lượng biểu
+diễn (cos²). Các biểu đồ cột đóng góp chỉ ra những biến nào định hình từng thành phần
+trong ba thành phần đầu (đường nét đứt đánh dấu mức đóng góp kỳ vọng nếu mọi biến đóng
+góp như nhau).
+
+```{r pca-plot-objects}
+# Build the PCA summary plots; they are arranged into panels in the next two chunks.
+a1 <- fviz_eig(res.pca, addlabels = TRUE, barfill = col_bar, barcolor = col_bar, ylim = c(1, 90),
+               title = "Scree plot", ylab = "Explained variances (%)") +
+  theme_pub + theme(aspect.ratio = 1.7)
+
+b1 <- fviz_pca_var(res.pca,
+                   title = "Variables \ncorrelation plot",
+                   col.var = "cos2",
+                   gradient.cols = c("#C6DBEF", "#2171B5", "#08306B"),
+                   repel = TRUE,
+                   arr.width = 25,) +
+  theme_pub + theme(aspect.ratio = 1)
+
+# Shared theme for the three per-dimension contribution charts.
+theme_contrib <- theme_pub + theme(aspect.ratio = 1.8)
+c1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 1, title = "Contribution \nDim1") + theme_contrib
+d1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 2, title = "Contribution \nDim2") + theme_contrib
+e1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 3, title = "Contribution \nDim3") + theme_contrib
+```
+
+```{r pca-scree-loadings}
+plot_grid(a1, b1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15,
+          rel_widths = c(1, 1), rel_heights = c(1, 1))
+```
+
+```{r pca-contributions}
+plot_grid(c1, d1, e1, ncol = 3, nrow = 1, labels = c("A", "B", "C"), label_size = 15,
+          rel_widths = c(1, 1), rel_heights = c(1, 1))
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Việc điểm khuỷu của biểu đồ scree nằm ngay sau thành phần thứ hai xác nhận rằng hai chiều là đủ.
+Các cột đóng góp làm rõ ý nghĩa của các trục: Dim.1 được tạo nên gần như đồng đều từ năm
+đại lượng ứng suất (mỗi biến khoảng 11–18%), Dim.2 bị chi phối bởi ba thời gian chùng
+ứng suất (`t2` 30%, `t1` 26%, `t3` 20%), còn Dim.3 — vốn đã nhỏ với 6.8% — về cơ bản
+chính là ứng suất cân bằng `A0` (49%), tham số ứng suất duy nhất mang một phần thông tin
+độc lập với các tham số còn lại.
+:::
+
+### Biểu đồ biplot
+
+Mỗi biểu đồ biplot chồng các mẫu (các điểm, theo điểm thành phần trên các trục) lên các
+hệ số tải của biến (các mũi tên). Những điểm nằm gần nhau là các mẫu có đặc trưng cơ học
+tương tự; một mẫu nằm theo hướng của một mũi tên có giá trị cao ở biến đó. Cùng một biểu
+đồ được vẽ hai lần — tô màu theo `SUS` (panel A) và theo `EtOH` (panel B) — kèm elip 95% cho từng nhóm, nhằm cho thấy yếu tố nào chi phối sự phân tách. (Đây
+là các elip *dữ liệu* — vùng kỳ vọng chứa khoảng 95% số mẫu của mỗi nhóm theo mô hình
+phân phối chuẩn — chứ không phải vùng tin cậy cho trung bình nhóm, vốn sẽ hẹp hơn nhiều;
+do đó các elip dữ liệu chồng lấn vẫn hoàn toàn tương thích với các trung bình nhóm phân
+tách rõ ràng.)
+
+```{r pca-theme-defs}
+# Shared themes for the biplot figures below (values identical across panels).
+theme_biplot     <- theme_pub + theme(aspect.ratio = .6, legend.position = "bottom")
+theme_biplot_lab <- theme_pub + theme(aspect.ratio = .65)
+```
+
+#### Biplot: PC1 và PC2
+
+```{r pca-biplot-12}
+a2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,          # colour samples by suspension concentration
+  col.ind = "black",
+  addEllipses = TRUE,          # 95% concentration ellipse per group
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,         # same plot, coloured by ethanol concentration
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a2, b2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Các mẫu xốp tự sắp xếp dọc theo trục Dim.1 theo nồng độ huyền phù (panel A), với nhóm
+0.24 wt% ở phía ứng suất thấp và nhóm 0.4 wt% ở phía ứng suất cao, trong khi các nhóm
+EtOH (panel B) chồng lấn đáng kể. Sự chồng lấn này là vấn đề về độ lớn hiệu ứng chứ
+không phải về hướng: cả hai yếu tố đều dịch chuyển các mẫu dọc theo cùng trục Dim.1,
+nhưng các trung bình nhóm SUS trải rộng khoảng 4.8 đơn vị điểm thành phần so với khoảng
+1.8 của EtOH, nên các elip của ethanol lồng vào nhau thay vì tách rời. Không yếu tố nào
+dịch chuyển các mẫu nhiều dọc theo Dim.2. Các phép hồi quy trên điểm thành phần ở phần
+dưới sẽ đưa ra con số cụ thể cho nhận định này.
+:::
+
+#### Biplot: PC1 và PC3
+
+```{r pca-biplot-13}
+a3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a3, b3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+#### Biplot: PC2 và PC3
+
+```{r pca-biplot-23}
+a4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a4, b4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+#### Biplot: PC1 và PC2 kèm nhãn mẫu
+
+Cùng phép chiếu như trên, nhưng mỗi điểm được gắn nhãn bằng mã mẫu của nó (cột `ID`,
+được giữ làm tên hàng khi nhập dữ liệu) — hữu ích để nhận diện từng mẫu riêng lẻ và các
+giá trị ngoại lai.
+
+```{r pca-biplot-12-labels-sus}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),   # points plus sample-ID labels
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_sus
+```
+
+```{r pca-biplot-12-labels-etoh}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_etoh
+```
+
+#### Biplot: PC7 và PC8
+
+Góc nhìn chẩn đoán cho hai thành phần **cuối cùng**. Các thành phần này hầu như không
+mang phương sai; một thành phần gần bằng không tương ứng với một quan hệ phụ thuộc tuyến
+tính gần như chính xác giữa các biến, nên biểu đồ này chủ yếu đóng vai trò kiểm tra sự
+dư thừa/cộng tuyến trong tập biến. Ở đây nó phát hiện một điều cụ thể: thành phần cuối
+cùng bị chi phối bởi Modulus và các biên độ ứng suất, và quả thực Modulus gần như đúng
+bằng một bội số cố định của `A0` + `A1` + `A2` + `A3` (r = 0.996). Điều đó là hệ quả
+tất yếu từ cách định nghĩa các đại lượng — ứng suất cân bằng và các ứng suất nhánh cộng
+lại tạo thành tổng ứng suất mà mẫu phải chịu tại thời điểm bắt đầu quá trình chùng ứng suất,
+σ(0) = σ~e~ + σ~1~ + σ~2~ + σ~3~ — nhưng nó có nghĩa là một phần của sự dư thừa mà PCA
+báo cáo mang tính cấu trúc chứ không phải một phát hiện thực nghiệm về các mẫu xốp.
+
+```{r pca-biplot-78}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(7, 8),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_sus
+```
+
+## Hồi quy đa đáp ứng (đa biến) & ANOVA
+
+Ở đây, nhiều biến đáp ứng được khớp **đồng thời** theo cùng một tập biến dự báo bằng
+`lm(cbind(...) ~ ...)`. Các hệ số thu được trùng với hệ số của các mô hình khớp riêng cho
+từng biến đáp ứng, nhưng `anova()` trên một mô hình đa đáp ứng thực hiện các kiểm định
+đa biến (kiểu MANOVA), có tính đến tương quan giữa các biến đáp ứng.
+
+### Bốn biến đáp ứng đồng thời: mô hình cộng tính
+
+Mô hình: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH)`
+
+```{r mlm-additive}
+mod2.1 <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH, data = nips)
+mod2.1 %>% summary()
+mod2.1 %>% anova()
+# tidy() labels each row with the response as written in the cbind() call
+# ("nips$Modulus"); the "$" pair would be read as math delimiters in the knitted
+# table, so the data-frame prefix is stripped for display only.
+mod2.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod2.1 %>% anova %>% kable(digits = 3)
+```
+
+### Bốn biến đáp ứng đồng thời: mô hình có tương tác
+
+Mô hình: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS * EtOH)`
+
+```{r mlm-interaction}
+mod2.1a <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod2.1a %>% summary()
+mod2.1a %>% anova()
+mod2.1a %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod2.1a %>% anova %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Các ước lượng hệ số trùng khớp với kết quả của các mô hình khớp riêng cho
+từng biến đáp ứng — việc khớp đồng thời nhiều biến đáp ứng không làm thay đổi lời giải
+bình phương tối thiểu — nhưng bảng `anova()` lúc này kiểm định hiệu ứng của mỗi yếu tố lên
+cả bốn biến đáp ứng *cùng một lúc*, có tính đến tương quan giữa chúng. Cả hai yếu tố đều
+có ý nghĩa thống kê rõ rệt trong kiểm định đồng thời (mô hình cộng tính: SUS có vết
+Pillai ≈ 1.00, *P* ≈ 10⁻⁷; EtOH có vết Pillai ≈ 0.79, *P* ≈ 3 × 10⁻⁵). Giá trị của cách đặt
+bài toán đa biến là nó ngăn ngừa việc chọn lọc kết quả có lợi (cherry-picking): mỗi yếu tố
+chỉ có một kiểm định tổng thể thay vì bốn kiểm định riêng lẻ.
+:::
+
+## Hồi quy & ANOVA trên điểm thành phần chính
+
+Thay vì mô hình hóa từng biến riêng lẻ, các điểm thành phần (score) đầu tiên của PCA được
+dùng làm biến đáp ứng *tổng hợp*: Dim.1 và Dim.2 tóm lược biến động chung của cả tám biến
+cơ học, nên hiệu ứng của các yếu tố lên điểm thành phần phản ánh hiệu ứng lên toàn bộ đặc trưng cơ học của vật liệu.
+
+### Hai điểm thành phần đồng thời: mô hình có tương tác
+
+Mô hình: `lm(cbind(Dim.1, Dim.2) ~ SUS * EtOH)`
+
+```{r pca-scores-mlm}
+# Sample scores on the principal components, from the PCA fitted above.
+score <- data.frame(res.pca$ind$coord)
+
+mod3.1 <- lm(cbind(score$Dim.1, score$Dim.2) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.1 %>% summary()
+mod3.1 %>% anova()
+mod3.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod3.1 %>% anova %>% kable(digits = 3)
+```
+
+### Trục độ cứng (Dim.1): mô hình cộng tính
+
+Mô hình: `lm(Dim.1 ~ SUS + EtOH)`
+
+```{r pca-scores-dim1}
+mod3.2 <- lm(score$Dim.1 ~ SUS + EtOH, data = nips)
+mod3.2 %>% summary()
+mod3.2 %>% anova()
+mod3.2 %>% tidy() %>% kable(digits = 3)
+mod3.2 %>% anova %>% kable(digits = 3)
+```
+
+```{r pca-scores-dim1-diag}
+par(mfrow = c(2, 2))
+mod3.2 %>% plot()
+```
+
+### Trục thời gian chùng ứng suất (Dim.2): mô hình cộng tính
+
+Mô hình: `lm(Dim.2 ~ SUS + EtOH)`
+
+Cùng mô hình cộng tính đó áp dụng cho thành phần thứ hai, để so sánh với Dim.1 ở trên.
+
+```{r pca-scores-dim2}
+mod3.2b <- lm(score$Dim.2 ~ SUS + EtOH, data = nips)
+mod3.2b %>% summary()
+mod3.2b %>% anova()
+mod3.2b %>% tidy() %>% kable(digits = 3)
+mod3.2b %>% anova %>% kable(digits = 3)
+```
+
+### Trục độ cứng (Dim.1): mô hình có tương tác
+
+Mô hình: `lm(Dim.1 ~ SUS * EtOH)`
+
+```{r pca-scores-dim1-int}
+mod3.3 <- lm(score$Dim.1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.3 %>% summary()
+mod3.3 %>% anova()
+mod3.3 %>% tidy() %>% kable(digits = 3)
+mod3.3 %>% anova %>% kable(digits = 3)
+```
+
+```{r pca-scores-dim1-int-diag}
+par(mfrow = c(2, 2))
+mod3.3 %>% plot()
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Việc coi các điểm thành phần là biến đáp ứng đã nén tám phép ANOVA
+xuống còn hai. Dim.1 — mức ứng suất tổng thể — được quyết định mạnh bởi các yếu tố
+chế tạo (*R*² = 0.86): nồng độ huyền phù là số hạng chi phối (*P* < 0.001) và ethanol là
+yếu tố thứ cấp rõ ràng (*P* < 0.001), tác động lên cùng trục đó với hiệu ứng nhỏ hơn.
+Dim.2 — trục thời gian chùng ứng suất — khó điều khiển hơn nhiều: hiệu ứng SUS yếu (*P* = 0.036)
+và không phát hiện được hiệu ứng của ethanol (*P* = 0.407). Như vậy, hai yếu tố dịch
+chuyển các mẫu xốp một quãng dài dọc trục độ cứng nhưng chỉ đôi chút dọc trục thời gian
+chùng ứng suất, và hai đòn bẩy này không tách bạch gọn gàng: cả hai chủ yếu tác động lên cùng
+thành phần thứ nhất.
+:::
+
+## MANOVA
+
+Phân tích phương sai đa biến (MANOVA) kiểm định xem vectơ trung bình của tám biến cơ học
+(`Modulus`, `A0`, `A1`, `t1`, `A2`, `t2`, `A3`, `t3`) có khác nhau giữa các mức của yếu tố
+hay không — một kiểm định đồng thời thay cho tám phép ANOVA riêng lẻ. Bốn thống kê kiểm
+định chuẩn mực được báo cáo: **vết Pillai** (bền vững nhất trước các vi phạm giả định), **lambda Wilks** (tiêu chuẩn tỉ số hợp lý kinh điển), **vết Hotelling–Lawley**, và **nghiệm lớn nhất Roy** (mạnh nhất khi khác biệt giữa các nhóm nằm dọc theo một chiều duy nhất, nhưng cũng dễ dãi nhất — dễ bác bỏ giả thuyết H₀ quá mức). Sự nhất
+quán của cả bốn thống kê củng cố thêm kết luận. Kết quả `summary.aov()` sau đó tách kết
+quả đồng thời thành các phép ANOVA đơn biến tiếp nối cho từng biến đáp ứng.
+
+### SUS
+
+`manova(cbind(Modulus, A0, A1, t1, A2, t2, A3, t3) ~ SUS)` — kiểm định đồng thời hiệu ứng của SUS:
+
+```{r manova-sus}
+mod4.1 <- manova(cbind(nips$Modulus, nips$A0, nips$A1, nips$t1, nips$A2, nips$t2, nips$A3, nips$t3) ~ SUS, data = nips)
+mod4.1 %>% summary.manova(intercept = TRUE, "Pillai")
+mod4.1 %>% summary.manova(intercept = TRUE, "Wilks")
+mod4.1 %>% summary.manova(intercept = TRUE, "Hotelling-Lawley")
+mod4.1 %>% summary.manova(intercept = TRUE, "Roy")
+```
+
+Các phép ANOVA đơn biến tiếp nối (mỗi biến đáp ứng một phép):
+
+```{r manova-sus-aov}
+mod4.1 %>% summary.aov()
+mod4.1 %>% tidy() %>% kable(digits = 3)
+```
+
+### EtOH
+
+`manova(cbind(Modulus, A0, A1, t1, A2, t2, A3, t3) ~ EtOH)` — kiểm định đồng thời hiệu ứng của EtOH:
+
+```{r manova-etoh}
+mod5.1 <- manova(cbind(nips$Modulus, nips$A0, nips$A1, nips$t1, nips$A2, nips$t2, nips$A3, nips$t3) ~ EtOH, data = nips)
+mod5.1 %>% summary.manova(intercept = TRUE, "Pillai")
+mod5.1 %>% summary.manova(intercept = TRUE, "Wilks")
+mod5.1 %>% summary.manova(intercept = TRUE, "Hotelling-Lawley")
+mod5.1 %>% summary.manova(intercept = TRUE, "Roy")
+```
+
+Các phép ANOVA đơn biến tiếp nối (mỗi biến đáp ứng một phép):
+
+```{r manova-etoh-aov}
+mod5.1 %>% summary.aov()
+mod5.1 %>% tidy() %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Cả hai yếu tố đều làm dịch chuyển có ý nghĩa thống kê vectơ trung bình
+đồng thời của tám biến cơ học: SUS với vết Pillai = 1.14 (*P* ≈ 10⁻⁶) và EtOH với vết
+Pillai = 0.68 (*P* = 0.027). Cả bốn thống kê kiểm định đều dẫn đến cùng một kết luận cho
+mỗi yếu tố — việc in ra cả bốn thống kê chính là để thực hiện phép
+kiểm tra tính bền vững này. Sự tương
+phản về độ mạnh phản chiếu toàn bộ kết quả ở trên — nồng độ huyền phù là đòn bẩy cơ học
+chính, ethanol là đòn bẩy thứ cấp — và các phép ANOVA đơn biến tiếp nối chỉ ra biến riêng
+lẻ nào gánh mỗi hiệu ứng đồng thời. Một lưu ý về cách hai kiểm định này được xây dựng:
+mỗi kiểm định là một MANOVA một yếu tố riêng biệt, nên không yếu tố nào được hiệu chỉnh
+theo yếu tố còn lại. Hiệu ứng SUS lớn vì thế vẫn nằm trong biến động phần dư của mô hình
+EtOH, khiến kiểm định cho ethanol trở nên bảo thủ (conservative). Mô hình đa đáp ứng hai
+yếu tố ở trên chỉ cải thiện được điều này một phần — `anova()` trên một mô hình đa biến
+cũng mang tính tuần tự, nên ở đó EtOH được hiệu chỉnh theo SUS nhưng SUS không được hiệu
+chỉnh theo EtOH. Ở đây cả hai con đường đều đi đến cùng một kết luận, và để có một kiểm
+định đa biến hoàn toàn không phụ thuộc thứ tự thì `car::Anova(mod2.1, type = 2)` là công
+cụ nên dùng.
+:::
+
+## ASCA: phân rã biến động đa biến
+
+Phân tích thành phần đồng thời kết hợp ANOVA (ANOVA–simultaneous component analysis,
+ASCA) nối liền hai mạch phân tích của phần này. Giống MANOVA, nó hỏi mỗi số hạng thiết kế
+chịu trách nhiệm cho bao nhiêu phần của biến động đa biến; giống PCA, sau đó nó nhìn vào
+*bên trong* phần biến động của từng số hạng bằng một phép phân rã thành phần. Ma trận dữ
+liệu đã chuẩn hóa (autoscaling) được tách thành các ma trận hiệu ứng cộng tính dựng từ
+trung bình các mức — một cho SUS, một cho EtOH, một cho tương tác giữa chúng — cộng với
+một ma trận phần dư; mỗi ma trận hiệu ứng nhận một tổng bình phương (phần của nó trong
+tổng biến động) và một phép PCA riêng. Ý nghĩa thống kê được đánh giá bằng hoán vị: các
+nhãn điều kiện được xáo trộn lại giữa các mẫu xốp (xáo trộn đồng thời cả cặp nhãn, để
+kích thước các ô thiết kế được giữ nguyên) và tổng bình phương quan sát được đem so với
+phân phối sau xáo trộn. Phần cài đặt được viết ra đầy đủ bên dưới thay vì nhập từ một gói
+lệnh, để mọi bước đều có thể theo dõi và chỉnh sửa được.
+
+```{r asca-analysis}
+set.seed(1234)
+X <- scale(as.matrix(nips[, vars_pca]))   # autoscaled mechanical variables (40 x 8)
+
+# Effect matrices from level means (the grand mean is 0 after autoscaling).
+asca_decomp <- function(a, b) {
+  Ma <- apply(X, 2, ave, a)
+  Mb <- apply(X, 2, ave, b)
+  Mi <- apply(X, 2, ave, interaction(a, b)) - Ma - Mb
+  list(Ma = Ma, Mb = Mb, Mi = Mi,
+       ssq = c(`SUS` = sum(Ma^2), `EtOH` = sum(Mb^2), `SUS x EtOH` = sum(Mi^2)))
+}
+obs <- asca_decomp(nips$SUS, nips$EtOH)
+resid_ssq <- sum((X - obs$Ma - obs$Mb - obs$Mi)^2)
+
+# Permutation test: reshuffle which sponge received which condition (the SUS/EtOH
+# label pairs are permuted jointly, so the design's cell sizes are preserved).
+n_perm <- 2000
+perm <- replicate(n_perm, {
+  i <- sample(nrow(X))
+  asca_decomp(nips$SUS[i], nips$EtOH[i])$ssq
+})
+p_perm <- (rowSums(perm >= obs$ssq) + 1) / (n_perm + 1)
+
+kable(data.frame(
+  Effect = c(names(obs$ssq), "Residual"),
+  `Sum of squares` = round(c(obs$ssq, resid_ssq), 1),
+  `Share of total (%)` = round(100 * c(obs$ssq, resid_ssq) / sum(X^2), 1),
+  `Permutation *P*` = c(ifelse(p_perm < 0.001, "< 0.001", sprintf("%.3f", p_perm)), ""),
+  check.names = FALSE), row.names = FALSE)
+```
+
+```{r asca-effect-pca}
+# PCA of each main-effect matrix: with three levels an effect matrix has rank two,
+# and its first component tells us what kind of mechanical change the factor produces.
+effect_pc1 <- function(M) {
+  sv <- svd(M)
+  list(share = sv$d[1]^2 / sum(sv$d^2), loading = setNames(sv$v[, 1], colnames(X)))
+}
+pc_sus <- effect_pc1(obs$Ma); pc_etoh <- effect_pc1(obs$Mb)
+cat(sprintf("SUS-effect PC1 carries %.1f%% of the SUS effect; loadings:\n", 100 * pc_sus$share))
+round(pc_sus$loading, 2)
+cat(sprintf("EtOH-effect PC1 carries %.1f%% of the EtOH effect; loadings:\n", 100 * pc_etoh$share))
+round(pc_etoh$loading, 2)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Phép phân rã này gói những gì cả phần này đã cho thấy vào một con số:
+nồng độ huyền phù chiếm nhỉnh hơn một nửa tổng biến động của tám biến cơ học (≈ 56%, kiểm định
+hoán vị *P* < 0.001), trong khi phần của ethanol (≈ 10%) cùng bậc với phần của tương tác
+(≈ 8%) và cả hai đều nhỏ bé so với phần dư (≈ 29%). Lưu ý rằng ethanol *không* vượt qua
+được kiểm định hoán vị này (*P* ≈ 0.09) dù MANOVA đã tuyên bố nó có ý nghĩa thống kê. Đó
+không phải là mâu thuẫn mà là sự khác nhau trong câu hỏi được đặt ra: kiểm định ASCA hỏi
+liệu phần biến động thô của ethanol có vượt quá mức ngẫu nhiên hay không, còn MANOVA cân
+hiệu ứng so với hiệp phương sai phần dư — một công cụ sắc bén hơn khi có một hiệu ứng
+cạnh tranh lớn (ở đây là SUS) làm phồng tổng biến động. Một lưu ý kỹ thuật nhỏ:
+với số lần lặp không bằng nhau, các ma trận hiệu ứng không trực giao một cách chính xác,
+nên các phần cộng lại hơi vượt quá 100% (khoảng 2%) — chính sự mất cân bằng đã là lý do
+dùng các kiểm định kiểu II ở phần trước.
+
+Các phép PCA ở mức hiệu ứng sau đó nén tác động của mỗi yếu tố về cơ bản thành một hướng
+duy nhất — PC1 mang 97–98% của mỗi ma trận hiệu ứng, nghĩa là ba trung bình mức gần như
+nằm trên một đường thẳng trong không gian đáp ứng tám chiều. Hướng của SUS mang hệ số tải cùng dấu trên cả năm đại lượng ứng suất, kèm hệ số tải ngược dấu yếu trên các thời gian chùng ứng suất: tăng
+nồng độ huyền phù làm tăng mọi tham số ứng suất và rút ngắn nhẹ các thang thời gian — câu
+chuyện Dim.1 của phép PCA toàn cục được phát biểu lại dưới dạng một hiệu ứng thiết kế.
+Hướng của ethanol là hướng đặc trưng hơn: nó ghép các biên độ ứng suất và các thời gian
+chùng ứng suất với dấu *ngược nhau*, nên khi đi từ 0.2 đến 1 wt% ethanol, các mẫu xốp trượt dọc
+theo một trục tiềm ẩn duy nhất về phía biên độ ứng suất thấp hơn *và* thời gian chùng ứng suất
+dài hơn. Đó là dấu ấn "mềm hơn nhưng chậm hơn" của ethanol — điều mà các mô hình đơn biến
+chỉ có thể mô tả từng biến đáp ứng một — được ghi nhận thành một hướng duy nhất trong
+không gian đáp ứng.
+:::
+
+# Phân tích bề mặt đáp ứng (yếu tố liên tục)
+
+Ở tất cả các phần trên, `SUS` và `EtOH` được xử lý như các mức thiết kế dạng phân loại.
+Phần này, ngược lại, coi chúng là các biến **liên tục** và dùng phương pháp bề mặt đáp ứng
+(RSM) để mô hình hóa `Shrinkage` (và, ở cuối phần, `Density`) như một hàm trơn của cả hai
+yếu tố, làm việc trên bản sao dữ liệu dạng số `dat`. Cách nhìn này cho phép nội suy giữa
+các mức đã thí nghiệm và chỉ ra biến đáp ứng giảm nhanh nhất theo hướng nào.
+
+Mô hình bậc nhất cho độ co ngót (Shrinkage) dưới đây chính là phân tích đã công bố trong
+bài báo trên ACS Omega: các hệ số của nó xuất hiện ở đó dưới dạng Bảng 2, bảng ANOVA của nó
+(bao gồm kiểm định lack of fit — kiểm định sự thiếu phù hợp của mô hình) là Bảng S6, và
+biểu đồ đường đồng mức của nó là Hình 6j. Dự đoán của RSM đã được kiểm chứng bằng ba
+mẫu xốp bổ sung chế tạo tại EtOH = 3 wt% (mỗi mức SUS một mẫu; Bảng S1 trong SI của ACS Omega,
+các hàng 43–45; cung cấp ở đây trong tệp `NIPS_validation.csv`):
+ba mẫu xốp này đo được độ co ngót 49–56% so với 46–48% mà mặt phẳng dự đoán, sát nhất
+tại SUS 0.4 wt% (49.4% so với 46.4%). Mục "Mô hình nào ngoại suy được?" dưới đây sẽ xem xét
+phép so sánh đó một cách đầy đủ.
+Mô hình bậc hai và phân tích chính tắc là những mở rộng mang tính khám phá vượt ra ngoài
+phân tích đã công bố, và phép kiểm tra ngoại suy dưới đây cho thấy vì sao mặt phẳng —
+chứ không phải mặt cong — mới là mô hình đáng tin cậy bên ngoài miền thiết kế.
+
+## Mô hình bậc nhất (FO)
+
+`FO(SUS, EtOH)` khớp một bề mặt đáp ứng bậc nhất — một mặt phẳng trên hai yếu tố. Kết quả
+`summary()` bao gồm kiểm định lack of fit, cho biết mặt phẳng đơn giản này đã đủ hay cần
+thêm độ cong (mô hình bậc hai). Kiểm định này khai thác các lần lặp: các mẫu xốp chế tạo
+ở cùng một điều kiện phân tán quanh trung bình của chính điều kiện đó, cho một ước lượng
+nhiễu không phụ thuộc mô hình (*pure error* — sai số thuần túy), trong khi chín trung bình
+điều kiện phân tán quanh mặt phẳng hồi quy (*lack of fit*); mặt phẳng chỉ bị nghi ngờ khi
+loại phân tán thứ hai vượt rõ rệt loại thứ nhất. Các biến dự báo được đưa vào theo đơn vị
+gốc (không mã hóa), nên các hệ số có thể diễn giải trực tiếp trên thang nồng độ. Bảng hệ số
+trùng với Bảng 2 của ACS Omega, và khối ANOVA trong summary trùng với Bảng S6
+(mô hình *P* = 0.011; lack of fit không có ý nghĩa thống kê, *P* = 0.260).
+
+```{r rsm-fo-fit}
+rsm1 <- rsm(Shrinkage ~ FO(SUS, EtOH), data = dat)
+summary(rsm1)
+rsm1 %>% tidy() %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Trên mặt phẳng hồi quy, độ co ngót giảm khoảng 3.8 điểm phần trăm
+cho mỗi 1 wt% ethanol (*P* = 0.005), trong khi độ dốc theo SUS (−8.9 trên mỗi wt%, tức chỉ
+khoảng −1.4 điểm trên toàn khoảng hẹp 0.24–0.4 wt%) không thể phân biệt với 0 về mặt
+thống kê (*P* = 0.176). Khối ANOVA cũng giàu thông tin không kém bảng hệ số: mô hình
+có ý nghĩa thống kê (*P* = 0.011) trong khi kiểm định lack of fit thì không (*P* = 0.260) —
+dữ liệu lặp bên trong miền thiết kế không đưa ra bằng chứng nào *chống lại* một mặt phẳng.
+Hãy đọc kết quả đó như việc không bác bỏ được giả thuyết, chứ không phải bằng chứng khẳng định
+mô hình đã đủ: với 6 và 31 bậc tự do, kiểm định có công suất (power) hạn chế, và mô hình
+chỉ giải thích được khoảng 22% phương sai của độ co ngót (*R*² = 0.216), nghĩa là còn khá
+nhiều biến động giữa các mẫu chưa được giải thích. Kiểm định này cũng không nói gì về
+hành vi bên ngoài khoảng đã thí nghiệm; các mẫu xốp EtOH = 3 wt% là ngoại suy thực sự,
+và chúng khớp với mặt phẳng này đến đâu sẽ được đánh giá riêng ở phần sau của chương
+này — một trong ba mẫu nằm khá sát, hai mẫu còn lại lệch 7.5–8.5 điểm.
+:::
+
+### Biểu đồ đường đồng mức của mặt phẳng hồi quy
+
+Bản đồ đường đồng mức tô màu của độ co ngót (Shrinkage) dự đoán. Hình chữ nhật màu đỏ
+đánh dấu miền thí nghiệm (miền thiết kế) mà nghiên cứu thực sự bao phủ — các dự đoán bên
+ngoài miền này là ngoại suy và cần được đọc một cách thận trọng.
+
+```{r rsm-fo-contour}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm1, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+```
+
+## Mô hình bậc hai (SO) & phân tích chính tắc
+
+`SO(SUS, EtOH)` bổ sung các số hạng bậc hai và tương tác, cho phép một bề mặt cong.
+Phân tích chính tắc sau đó xác định điểm dừng của bề mặt này và báo cáo các trị riêng
+của dạng toàn phương: tất cả đều âm → cực đại, tất cả đều dương → cực tiểu, trái dấu
+→ điểm yên ngựa. `threshold = 0` giữ nguyên các trị riêng đúng như ước lượng (không
+làm tròn về 0 các giá trị gần 0).
+
+```{r rsm-so-fit}
+rsm2 <- rsm(Shrinkage ~ SO(SUS, EtOH), data = dat)
+canonical(rsm2, threshold = 0)
+```
+
+Trị riêng phụ thuộc vào thang đo — chúng là đạo hàm bậc hai của bề mặt, với đơn vị là
+biến đáp ứng trên bình phương đơn vị biến dự báo — nên trên thang wt% gốc, hai trị riêng
+không so sánh được với nhau: SUS được thay đổi trên một khoảng hẹp hơn EtOH năm lần,
+điều này thổi phồng độ cong biểu kiến của nó lên khoảng 25 lần. Khớp lại mô hình trên các
+yếu tố **mã hóa** — mỗi yếu tố được co giãn sao cho khoảng thiết kế chạy từ −1 đến +1 —
+loại bỏ hiệu ứng giả này và là cách chuẩn để đọc một phân tích chính tắc.
+
+```{r rsm-so-coded}
+# Code both factors to [-1, +1] over their design ranges: SUS 0.24-0.4, EtOH 0.2-1 wt%.
+dat_coded <- coded.data(dat, x1 ~ (SUS - 0.32)/0.08, x2 ~ (EtOH - 0.6)/0.4)
+rsm2c <- rsm(Shrinkage ~ SO(x1, x2), data = dat_coded)
+summary(rsm2c)
+canonical(rsm2c, threshold = 0)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Cả hai trị riêng đều dương, nên mặt bậc hai được khớp có cực tiểu
+tại điểm dừng, nằm ở khoảng SUS 0.35 wt%, EtOH 0.90 wt% — tức là bên trong miền thiết kế
+chứ không phải tại một điểm tối ưu vượt ra ngoài nó. Các trị riêng không mã hóa (≈ 247 và
+≈ 8) trông chênh lệch rất lớn, nhưng tỉ lệ đó gần như hoàn toàn do sự lệch đơn vị vừa mô tả:
+trên các yếu tố mã hóa, chúng trở thành ≈ 1.7 và ≈ 1.2. Đây là một bài học tổng quát hữu ích —
+đừng bao giờ so sánh độ lớn của các trị riêng chính tắc tính từ các biến dự báo không mã hóa,
+vì yếu tố được thay đổi trên khoảng hẹp hơn sẽ luôn có vẻ chiếm ưu thế.
+
+Điểm cần thận trọng hơn là toàn bộ những điều trên đều chưa được khẳng định về mặt thống kê.
+Bản summary trên các yếu tố mã hóa cho thấy không có số hạng bậc hai hay tương tác nào có ý nghĩa
+thống kê (`x1^2` *P* = 0.12, `x2^2` *P* = 0.21,
+`x1:x2` *P* = 0.49), nên hình dạng đang được mô tả — dấu của các trị riêng, và do đó
+bề mặt là lòng chảo hay điểm yên ngựa, cũng như vị trí của điểm dừng — dựa trên những
+hệ số mà dữ liệu không phân biệt được với 0. Với chỉ ba mức cho mỗi yếu tố, một mô hình
+bậc hai đầy đủ nằm ở ranh giới những gì thiết kế có thể hỗ trợ, và cả kiểm định lack of fit
+của mô hình bậc nhất lẫn bản thân các số hạng bậc hai đều không đưa ra bằng chứng nào
+cho thấy phần độ cong bổ sung là cần thiết. Hãy xem
+phân tích chính tắc ở đây như một minh họa cho phương pháp, chứ không phải một phát hiện
+về các mẫu xốp này; phép so sánh dưới đây cho thấy điều gì xảy ra khi nó được hiểu theo
+nghĩa đen.
+:::
+
+### Biểu đồ đường đồng mức kèm đường chính tắc
+
+Các vòng tròn màu xanh dương lần theo đường chính tắc do `canonical.path()` trả về, đi
+ra ngoài từ điểm dừng (ký hiệu khác biệt tại khoảng cách 0) dọc theo trục có độ cong
+*nhỏ nhất*. Hàm được gọi với `descent = TRUE`, nhưng trên bề mặt này thực ra không có gì
+đi xuống cả: vì cả hai trị riêng đều dương nên điểm dừng là cực tiểu, do đó độ co ngót
+dự đoán tăng theo mọi hướng rời xa điểm này — tăng chậm dọc theo đường chính tắc và tăng
+nhanh ở các hướng khác. Ô vuông xanh dương tô đặc đánh dấu điều kiện kiểm chứng
+SUS = 0.4 wt%, EtOH = 3 wt%, với độ co ngót đo được là 49.4%; lưu ý rằng điểm này nằm
+cách xa bề mặt được khớp — đó chính là luận điểm sẽ được nêu dưới đây. Hình chữ nhật
+màu đỏ, như trước, là miền thiết kế.
+
+```{r rsm-so-contour-path}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(30, 80), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(EtOH ~ SUS, data = canonical.path(rsm2, descent = TRUE, threshold = 0),
+       col = "#08306B", pch = 1 + 6*(dist == 0))   # pch 7 marks the stationary point (dist == 0)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
+```
+
+### Biểu đồ đường đồng mức quanh điểm dừng
+
+Cùng bề mặt bậc hai đó, được vẽ lại với lát cắt đi qua điểm dừng
+(`at = summary(rsm2)$canonical$xs`) và khoảng EtOH rộng hơn.
+
+```{r rsm-so-contour-stationary}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), at = summary(rsm2)$canonical$xs,
+        bounds = list(EtOH = c(0.1, 5), SUS = c(0, 0.5)), zlim = c(40, 100), decode = FALSE)
+```
+
+### Mô hình nào ngoại suy được? Kiểm chứng bằng các mẫu xốp bổ sung
+
+Ba mẫu xốp EtOH = 3 wt% được chế tạo vượt xa miền thiết kế, nên chúng là một phép thử ngoài mẫu đúng nghĩa đối với hai bề mặt đang cạnh tranh.
+
+```{r rsm-validation-check}
+val <- read.csv("NIPS_validation.csv", header = TRUE, row.names = 1)
+
+comparison <- data.frame(
+  SUS = val$SUS, EtOH = val$EtOH,
+  `Measured (%)` = round(val$Shrinkage, 1),
+  `First order (%)` = round(predict(rsm1, val[, c("SUS", "EtOH")]), 1),
+  `Second order (%)` = round(predict(rsm2, val[, c("SUS", "EtOH")]), 1),
+  check.names = FALSE)
+kable(comparison, row.names = FALSE)
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Hãy đọc bảng này như một phép so sánh giữa hai mô hình, chứ không phải chiến thắng của
+bên nào. Mặt phẳng dự đoán độ co ngót 46–48% so với 49–56% đo được, tức sai lệch 3.0,
+7.5 và 8.5 điểm phần trăm — lớn nhất lên tới khoảng ba lần sai số chuẩn phần dư của
+chính mô hình (2.74), và lớn hơn toàn bộ biên độ 4.5 điểm mà nó dự đoán trên toàn lưới
+thiết kế. Mặt phẳng cũng chỉ đúng một phần về xu hướng: từ EtOH 1 wt% lên EtOH 3 wt%,
+độ co ngót đo được giảm tại SUS 0.4 wt% (54.0 → 49.4%) và tại SUS 0.24 wt% (56.9 → 56.3%),
+nhưng lại tăng tại SUS 0.3 wt% (53.1 → 54.8%), trong khi mặt phẳng dự đoán một mức giảm
+đồng đều 7.6 điểm (gấp đôi độ dốc EtOH của nó, −3.78 trên mỗi wt%). Tóm tắt khách quan là:
+mặt phẳng vẫn nằm trong khoảng giá trị hợp lý và nắm được chiều hướng tại nồng độ huyền
+phù cao nhất — đúng nơi mà lập luận tối ưu hóa của bài báo nhắm tới.
+
+Ngược lại, mô hình bậc hai không chỉ thiếu chính xác mà còn sai về mặt định tính: nó
+dự đoán độ co ngót khoảng 88–95% trong khi giá trị đo được chỉ là 49–56%. Nguyên nhân mang tính cấu trúc
+chứ không phải ngẫu nhiên. Một mặt bậc hai được khớp với cực tiểu nằm bên trong miền
+thiết kế bắt buộc phải cong lên theo mọi hướng bên ngoài miền đó, nên khi ngoại suy nó
+về phía nồng độ ethanol cao hơn — đúng hướng mà thí nghiệm muốn khám phá — nó chắc chắn
+sẽ dự đoán quá cao. Đó là bài học tổng quát đáng rút ra từ bảng này: các bề mặt đa thức
+mô tả miền mà chúng được khớp, và độ linh hoạt tăng thêm bên trong miền đó không mang lại
+gì bên ngoài nó. Phân tích đã công bố dùng mô hình bậc nhất, và phép so sánh này cho
+thấy vì sao.
+:::
+
+## Trung bình dự đoán trên lưới thiết kế
+
+Trung bình biên ước lượng (estimated marginal means, EMM) của độ co ngót (Shrinkage) từ
+mô hình bậc nhất, tính tại chín tổ hợp thiết kế của nghiên cứu
+(SUS 0.24/0.3/0.4 wt% × EtOH 0.2/0.5/1 wt%;
+`mode = "decoded"` báo cáo chúng trên thang nồng độ gốc). Với một mô hình cộng tính,
+các trung bình biên ước lượng này đơn giản là giá trị của mặt phẳng hồi quy tại các
+điểm lưới; chúng khác đôi chút so với trung bình ô thô vì mô hình gộp thông tin từ cả
+40 mẫu xốp, và khác với trung bình thô, chúng đi kèm sai số chuẩn dựa trên mô hình.
+
+```{r rsm-emmeans-grid}
+# Note: emmeans reconstructs the data from the model call, so `dat` must exist in the
+# workspace — which is the case when this document is knitted normally.
+emmeans::emmeans(rsm1, ~ SUS * EtOH, mode = "decoded",
+                 at = list(SUS = c(0.24, 0.3, 0.4), EtOH = c(0.2, 0.5, 1)))
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Các trung bình biên ước lượng gán con số cụ thể cho lưới thiết kế:
+độ co ngót dự đoán trải từ 58.4% tại điều kiện nhẹ nhất (SUS 0.24, EtOH 0.2) xuống
+53.9% tại (SUS 0.4, EtOH 1) — biên độ khoảng 4.5 điểm phần trăm, với sai số chuẩn dưới
+một điểm. Xu hướng giảm đơn điệu dọc theo cả hai trục chính là điều thúc đẩy các lần
+chế tạo kiểm chứng vượt ra ngoài miền thiết kế tại EtOH = 3 wt% (`NIPS_validation.csv`), đã được
+đánh giá ở mục "Mô hình nào ngoại suy được?" phía trên.
+:::
+
+## Đối chiếu với hồi quy lm() thông thường
+
+Cùng bề mặt bậc nhất đó có thể được khớp bằng hàm `lm()` thông thường; các mô hình này
+tái lập kết quả RSM và bổ sung các chẩn đoán hồi quy chuẩn.
+
+### Hồi quy đa thức bậc nhất
+
+`poly(SUS, EtOH, degree = 1)` sinh cùng không gian mô hình với `FO(SUS, EtOH)`, nên
+biểu đồ đường đồng mức này phải trùng với biểu đồ FO ở trên. (Điểm SUS = 0.4, EtOH = 3
+vẫn là điều kiện kiểm chứng như trước.)
+
+```{r rsm-fo-poly-check}
+fo_poly <- lm(Shrinkage ~ poly(SUS, EtOH, degree = 1), data = dat)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(fo_poly, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
+```
+
+### Mô hình cộng tính cho độ co ngót (Shrinkage), kèm chẩn đoán
+
+Hồi quy cộng tính thông thường `Shrinkage ~ SUS + EtOH` trên các yếu tố dạng số, bảng
+ANOVA của nó, một biểu đồ đường đồng mức phóng to vào miền thiết kế, và các biểu đồ
+chẩn đoán chuẩn (residuals vs fitted, normal Q–Q, scale–location, residuals vs leverage).
+
+```{r rsm-lm-shrinkage}
+lm2 <- lm(Shrinkage ~ SUS + EtOH, data = dat)
+summary(lm2)
+anova(lm2)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm2, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)),
+        zlim = c(50, 65), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
+par(mfrow = c(2, 2))
+lm2 %>% plot()
+```
+
+### Mô hình cộng tính cho khối lượng riêng (Density)
+
+Cùng cách tiếp cận, áp dụng cho khối lượng riêng (Density) làm biến đáp ứng.
+
+```{r rsm-lm-density}
+lm3 <- lm(Density ~ SUS + EtOH, data = dat)
+summary(lm3)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm3, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
+```
+
+# Quan hệ cấu trúc–tính chất (Gibson–Ashby)
+
+Mô đun đàn hồi biểu kiến tỉ lệ với khối lượng riêng theo mô hình Gibson–Ashby cho
+vật liệu xốp (cellular solids), E\*/*E*~s~ = C · (ρ/ρ~s~)^n^, với các giá trị tham chiếu
+của cellulose acetate đặc *E*~s~ = 1178 MPa và ρ~s~ = 1311 kg·m⁻³. Mô hình được khớp bằng
+bình phương tối thiểu phi tuyến trên thang đo gốc, và cách khớp này tái lập đúng các hằng số
+đã báo cáo trong Hình 5b của bài báo Polymer Journal (*C* = 2.04, *n* = 2.48). Về mặt thống kê,
+số mũ n mới là tham số giàu thông tin: giá trị gần 2 là dấu hiệu kinh điển của biến dạng
+chủ yếu do uốn trong vật liệu xốp lỗ hở (open-cell). Hệ số tỉ lệ C (prefactor) đo mức độ cứng
+của mạng lưới tại một khối lượng riêng tương đối cho trước so với cấu trúc tham chiếu
+lý tưởng hóa đó; bài báo Polymer Journal bàn về điều mà giá trị của nó hàm ý đối với
+kiến trúc lỗ xốp.
+
+```{r gibson-ashby}
+Erel   <- (nips$Modulus / 1000) / 1178   # kPa -> MPa, relative to solid CA (Es = 1178 MPa)
+rhorel <- nips$Density / 1311            # relative to solid CA (rho_s = 1311 kg m^-3)
+
+ga_fit <- nls(Erel ~ C * rhorel^n, start = list(C = 1, n = 2))
+summary(ga_fit)
+cov2cor(vcov(ga_fit))   # C and n are almost perfectly correlated (see the discussion)
+
+par(cex.axis = 1.25, cex.lab = 1.4, font.lab = 2, font.axis = 2, cex.main = 1.5)
+plot(rhorel, Erel, log = "xy",
+     pch = 21, cex = 1.4, bg = pal_sus[as.integer(nips$SUS)],
+     xlab = "Relative density", ylab = "Relative modulus",
+     main = "Gibson-Ashby scaling")
+curve(coef(ga_fit)[["C"]] * x^coef(ga_fit)[["n"]], add = TRUE, col = col_accent, lwd = 2)
+legend("topleft", legend = levels(nips$SUS), pt.bg = pal_sus,
+       pch = 21, title = "SUS (wt%)", bty = "n")
+```
+
+::: {.interpretation}
+**Diễn giải.**
+
+Hai hằng số được ước lượng với độ chính xác rất khác nhau: số mũ thu được là
+*n* = 2.48 ± 0.15 và vượt giá trị lý tưởng 2 của cấu trúc lỗ hở, trong khi hệ số tỉ lệ
+đi kèm một khoảng bất định rộng (*C* = 2.04 ± 1.56). Rất đáng tìm hiểu *vì sao* C khó được
+xác định chặt ở đây, bởi nguyên nhân mang tính hình học chứ không phải là khiếm khuyết
+của dữ liệu. Các mẫu xốp chỉ trải trên khoảng khối lượng riêng tương đối chừng 0.004–0.007,
+trong khi C được định nghĩa tại ρ~rel~ = 1 — một phép ngoại suy vượt quá hai bậc độ lớn.
+Trên một quãng ngoại suy dài như vậy, hệ số chặn và số mũ gần như ràng buộc hoàn toàn với nhau
+(ma trận tương quan in ra ở trên cho r(*C*, *n*) ≈ 0.9995): chỉ cần nghiêng nhẹ đường khớp
+trong phạm vi cửa sổ dữ liệu là hệ số tỉ lệ ngoại suy đã dao động rất mạnh — mỗi thay đổi
+0.1 của n làm C thay đổi khoảng 1.7 lần. Và bản thân cửa sổ này không dễ mở rộng: chế tạo
+các mẫu xốp trên một khoảng khối lượng riêng rộng hơn nhiều *mà vẫn giữ nguyên cấu hình
+mạng lưới bên trong* chính là điều mà một quy trình tạo khuôn bằng tinh thể băng
+(cryo-templating) với thành phần hóa học cố định khiến cho khó thực hiện, nên khoảng
+khối lượng riêng hẹp là một ràng buộc vật lý của hệ vật liệu, chứ không phải là thiếu sót
+của thí nghiệm.
+
+Chính sự ràng buộc đó giải thích sự khác biệt giữa các phương pháp khớp. Bình phương
+tối thiểu phi tuyến trên thang đo gốc cho (*C*, *n*) = (2.04, 2.48); hồi quy tuyến tính
+thông thường của log(*E*~rel~) theo log(ρ~rel~) cho (7.5, 2.73). Đây không phải là hai
+khẳng định vật lý cạnh tranh nhau: bên trong cửa sổ đo, hai đường cong trùng khớp trong
+phạm vi khoảng 10% (tối đa \~12% ở mép dưới của cửa sổ), và chúng chỉ tách xa nhau khi được
+ngoại suy về phía ρ~rel~ = 1, nơi độ dốc hơi lớn hơn của phép khớp trên thang log tích lũy
+thành một hệ số chặn lớn hơn gần gấp bốn lần (một hệ số xấp xỉ
+(1/0.005)^Δ*n*^ ≈ 3.7 với Δ*n* = 0.25, trong đó 0.005 là khối lượng riêng tương đối ở
+giữa cửa sổ). Hai cặp (*C*, *n*) là hai điểm trên cùng một dải hẹp (ridge) các tổ hợp
+tham số mô tả các mẫu xốp này tốt ngang nhau — vì vậy giá trị trên thang log *C* = 7.5
+không mang một ý nghĩa cấu trúc riêng nào để diễn giải, và cố đọc nó như vậy sẽ là đếm
+trùng cái thực chất chỉ là một cách gán lại trọng số cho cùng một lượng thông tin.
+
+Vậy nên báo cáo và diễn giải giá trị nào? Trong các công bố về vật liệu xốp, cách đọc C mang
+tính thực nghiệm: các giá trị được so sánh với kho dữ liệu đo đã tích lũy trên các loại bọt xốp (foam) và cấu trúc mạng (lattice), cũng như với các mô hình ô đơn vị lý tưởng hóa — một truyền
+thống gắn với dạng Gibson–Ashby chuẩn được khớp trực tiếp, tức chính quy ước mà giá trị
+đã công bố *C* = 2.04 tuân theo, và cũng là quy ước thích hợp khi so sánh với các báo cáo
+trước đây. Đọc theo truyền thống đó, và đặt cạnh kiến trúc lỗ xốp được đo một cách độc lập
+(phân tích chụp cắt lớp vi tính tia X — X-ray CT — trong bài báo Polymer Journal), ước lượng điểm
+nhất quán với mạng lưới cứng hơn so với mức lý tưởng và có độ liên thông cao hơn được mô tả ở đó; khoảng
+thống kê rộng chỉ ghi nhận rằng riêng cửa sổ khối lượng riêng tiếp cận được không đủ để
+xác định chặt hệ số tỉ lệ, chứ không nói rằng cách đọc cấu trúc kia là sai. Từ đây rút ra
+hai thói quen thực hành cho bất kỳ ai dùng lại phép khớp này: luôn báo cáo C cùng với số mũ n đi cặp với nó và quy ước khớp (dọc theo dải tham số, C chỉ có nghĩa tại đúng số mũ của
+nó), và khi cần một đại lượng tóm tắt độ cứng không phụ thuộc phương pháp, hãy báo cáo
+mô đun tương đối khớp được tại một khối lượng riêng nằm *bên trong* cửa sổ đo — tại
+ρ~rel~ = 0.006 cả hai phép khớp đều cho *E*~rel~ ≈ 6.4 × 10⁻⁶ — đại lượng được ước lượng
+chính xác và hoàn toàn không phụ thuộc vào phép ngoại suy.
+:::
+
+# Kết luận
+
+Gộp chung lại, các phân tích kể một câu chuyện nhất quán với hai đòn bẩy. Nồng độ
+huyền phù quyết định lượng vật liệu mà mạng lưới tạo khuôn bằng tinh thể băng chứa đựng:
+khối lượng riêng, độ xốp, độ cứng và các biên độ ứng suất Maxwell đều đi theo nó gần như
+tất định (*R*² lên tới 0.96), và phép khớp Gibson–Ashby cô đọng điều này thành một quy luật
+lũy thừa duy nhất với số mũ (*n* = 2.48) nằm trên giá trị 2 kỳ vọng cho biến dạng uốn
+lý tưởng của cấu trúc lỗ hở. Nồng độ ethanol tác động sớm hơn trong quy trình, lên sự
+hình thành tinh thể băng, và vì thế thể hiện ở các đại lượng liên quan đến hình dạng và
+thời gian: độ co ngót giảm trong khi đường kính, độ phục hồi, ứng suất dư và thời gian
+chùng ứng suất đặc trưng đều tăng. Góc nhìn đa biến làm rõ hơn hai đòn bẩy này khác nhau ở chỗ
+nào. Chúng không trực giao: cả hai tác động chủ yếu lên cùng một thành phần "độ mạnh" (strength) của đặc trưng cơ học, trong đó nồng độ huyền phù mạnh hơn hẳn. Điều phân biệt
+chúng là ethanol còn làm tăng thêm độ phục hồi và ứng suất dư, và làm điều đó trong khi
+*hạ thấp* độ cứng — nên hai tính chất này đánh đổi cho nhau dọc theo trục ethanol. Nồng độ
+huyền phù thay đổi độ cứng mà không có hiệu ứng *phát hiện được* nào lên độ phục hồi
+(*P* = 0.93), và chính điều đó khiến hai tính chất có thể được điều khiển riêng rẽ ở đây.
+Phát biểu cuối cùng này cần kèm một lưu ý riêng, thuộc đúng loại lưu ý mà tài liệu này đã
+áp dụng xuyên suốt: với 40 mẫu xốp, dữ liệu chỉ chặn được hiệu ứng (nếu có) của huyền phù
+lên độ phục hồi ở mức nhiều nhất khoảng 7 điểm phần trăm — một giới hạn trên lớn gần bằng
+chính hiệu ứng của ethanol. Khoảng tin cậy 95% cho tương phản huyền phù lớn nhất trên
+độ phục hồi chạy từ −4.8 đến +6.9 điểm phần trăm, so với hiệu ứng ethanol ước lượng bằng
++7.4. "Không phát hiện được hiệu ứng" không đồng nghĩa với "không có hiệu ứng", và một
+nghiên cứu lớn hơn hoàn toàn có thể tìm thấy hiệu ứng đó.
+Về diễn giải cơ chế của các quy luật này (sự dày lên của thành lỗ xốp, sự kiểm soát
+tạo khuôn bằng tinh thể băng, sự tách lớp và trượt của màng nano), xin xem hai bài báo
+được trích dẫn ở đầu tài liệu; tài liệu này nhằm giúp bạn đọc lần lại, thăm dò và mở rộng
+khía cạnh thống kê của câu chuyện đó.

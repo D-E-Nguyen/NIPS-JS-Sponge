@@ -1,0 +1,54 @@
+<meta name="description" content="NIPS-JS 酢酸セルロースナノフィルムスポンジ研究のオープンデータセットと完全な R 解析ノートブック: 3x3 完全実施要因計画、分散分析 (ANOVA)、主成分分析 (PCA)、MANOVA、ASCA、応答曲面法、Gibson-Ashby スケーリング。ACS Omega と Polymer Journal 掲載論文の統計結果を再現。">
+<meta name="keywords" content="酢酸セルロース, cellulose acetate, ナノフィルム, スポンジ, 氷晶テンプレート法, NIPS-JS, 実験計画法, 分散分析, ANOVA, PCA, MANOVA, ASCA, 応答曲面法, Gibson-Ashby, 応力緩和, 一般化マクスウェルモデル, オープンデータ, R, 再現可能研究">
+<meta property="og:title" content="NIPS-JS スポンジ — データと統計解析">
+<meta property="og:description" content="セルロースナノフィルムスポンジに関する 2 報の論文を支える、再現可能なデータセットと詳細な統計解析。">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="ja_JP">
+<meta property="og:url" content="https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="vi_VN">
+<link data-external="1" rel="canonical" href="https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html">
+<link data-external="1" rel="alternate" hreflang="en" href="https://d-e-nguyen.github.io/NIPS-JS-Sponge/">
+<link data-external="1" rel="alternate" hreflang="vi" href="https://d-e-nguyen.github.io/NIPS-JS-Sponge/vi.html">
+<link data-external="1" rel="alternate" hreflang="ja" href="https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html">
+<link data-external="1" rel="alternate" hreflang="x-default" href="https://d-e-nguyen.github.io/NIPS-JS-Sponge/">
+<meta name="google-site-verification" content="B5GWFfdteVNzfHtqkbu3qy-gOghupRVCmAtXML9nhUA" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "Dataset",
+  "name": "NIPS-JS 酢酸セルロースナノフィルムスポンジ データセット",
+  "description": "氷晶テンプレート法 (cryo-templating) により 3x3 完全実施要因計画 (ポリマー懸濁液濃度 0.24/0.3/0.4 wt% x エタノール共溶媒 0.2/0.5/1 wt%) で作製した 40 個の酢酸セルロースナノフィルムスポンジの特性データ: 幾何特性 (質量、直径、高さ、体積、密度、空隙率、収縮率) と圧縮力学特性 (見かけの弾性率、マクスウェル要素 3 個の一般化マクスウェルモデルによる応力緩和パラメータ、特性緩和時間、残留応力、回復率)、およびエタノール 3 wt% の検証用スポンジ 3 個。公表済み統計結果を再現する完全な R 解析ノートブック付き。",
+  "inLanguage": "ja",
+  "url": "https://d-e-nguyen.github.io/NIPS-JS-Sponge/ja.html",
+  "sameAs": ["https://d-e-nguyen.github.io/NIPS-JS-Sponge/",
+             "https://d-e-nguyen.github.io/NIPS-JS-Sponge/vi.html",
+             "https://github.com/D-E-Nguyen/NIPS-JS-Sponge"],
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "creator": {
+    "@type": "Person",
+    "name": "De Nguyen",
+    "@id": "https://orcid.org/0000-0001-5479-5927",
+    "affiliation": "Kyoto Institute of Technology"
+  },
+  "keywords": ["酢酸セルロース", "ナノフィルム", "スポンジ", "氷晶テンプレート法",
+               "応力緩和", "一般化マクスウェルモデル", "実験計画法",
+               "Gibson-Ashby", "オープンデータ"],
+  "variableMeasured": ["密度", "空隙率", "収縮率", "見かけの弾性率",
+                       "応力緩和パラメータ", "回復率"],
+  "distribution": [{
+    "@type": "DataDownload",
+    "encodingFormat": "text/csv",
+    "contentUrl": "https://raw.githubusercontent.com/D-E-Nguyen/NIPS-JS-Sponge/main/NIPS.csv"
+  }, {
+    "@type": "DataDownload",
+    "encodingFormat": "text/csv",
+    "contentUrl": "https://raw.githubusercontent.com/D-E-Nguyen/NIPS-JS-Sponge/main/NIPS_validation.csv"
+  }],
+  "citation": [
+    "https://doi.org/10.1021/acsomega.5c02353",
+    "https://doi.org/10.1038/s41428-025-01083-z"
+  ]
+}
+</script>

@@ -1,6 +1,7 @@
 ---
 title: "NIPS-JS Sponge — Data & Statistical Analysis"
-author: "De Nguyen"
+author: "De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927))"
+lang: en
 output:
   html_document:
     toc: yes
@@ -26,6 +27,10 @@ editor_options:
   markdown:
     wrap: 120
 ---
+
+<div style="text-align: right; margin: 0.2em 0 1.2em; font-size: 0.95em;">
+<strong>English</strong> · <a href="vi.html" hreflang="vi" lang="vi">Tiếng Việt</a> · <a href="ja.html" hreflang="ja" lang="ja">日本語</a>
+</div>
 
 ```{r setup, include=FALSE}
 # Global chunk options: code is hidden in the rendered report (echo = FALSE), so the
@@ -274,8 +279,8 @@ The raw-scale panel mostly demonstrates how different the measurement
 scales are — `t3` and `T` span hundreds of seconds while Density and the stress parameters
 sit near zero — which is why the standardized panel is the more informative one. Note what
 standardizing does and does not do: it forces every variable to the same standard
-deviation, so box *widths* no longer say which response varies most. What they do reveal
-is distribution shape, since a box is wide relative to a now-fixed standard deviation when
+deviation, so box *heights* no longer say which response varies most. What they do reveal
+is distribution shape, since a box is tall relative to a now-fixed standard deviation when
 the data are spread towards the quartiles rather than concentrated in the middle — often
 the signature of several treatment groups sitting at different levels, as with Density and
 Modulus here. It is also the right mental model for the PCA later on, which likewise
@@ -1316,9 +1321,10 @@ for `A0` up to 0.96 for Modulus), with SUS carrying most of that on its own (for
 side: Diameter, Volume/Shrinkage, Recovery and `RS` all move with ethanol at *P* < 0.05
 while showing no detectable SUS effect. Among the shape-related responses (Diameter,
 Height, Volume/Shrinkage), Height is the one driven primarily by SUS (*P* = 0.001). The
-relaxation timescales (`t3`, `T`) are the least determined of all: ethanol reaches
-significance (*P* ≈ 0.03) and SUS sits outside it (*P* ≈ 0.08), so neither factor controls
-them strongly — note that the Polymer Journal analysis, run on the earlier Maxwell-fit
+relaxation timescales (`t1`–`t3`, `T`) are among the least determined responses in the
+table (*R*² between 0.17 and 0.29): for `t3` and `T` ethanol reaches significance
+(*P* ≈ 0.03) while SUS sits just outside it (*P* ≈ 0.08), and for `t1` and `t2` neither
+factor reaches it, so no factor controls the relaxation timescales strongly — note that the Polymer Journal analysis, run on the earlier Maxwell-fit
 values of τ, found a clearly significant SUS effect there, one of the places where that
 earlier fit and this dataset differ.
 
@@ -1846,7 +1852,10 @@ Model: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH)`
 mod2.1 <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH, data = nips)
 mod2.1 %>% summary()
 mod2.1 %>% anova()
-mod2.1 %>% tidy() %>% kable(digits = 3)
+# tidy() labels each row with the response as written in the cbind() call
+# ("nips$Modulus"); the "$" pair would be read as math delimiters in the knitted
+# table, so the data-frame prefix is stripped for display only.
+mod2.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
 mod2.1 %>% anova %>% kable(digits = 3)
 ```
 
@@ -1858,7 +1867,7 @@ Model: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS * EtOH)`
 mod2.1a <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH + SUS*EtOH, data = nips)
 mod2.1a %>% summary()
 mod2.1a %>% anova()
-mod2.1a %>% tidy() %>% kable(digits = 3)
+mod2.1a %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
 mod2.1a %>% anova %>% kable(digits = 3)
 ```
 
@@ -1891,7 +1900,7 @@ score <- data.frame(res.pca$ind$coord)
 mod3.1 <- lm(cbind(score$Dim.1, score$Dim.2) ~ SUS + EtOH + SUS*EtOH, data = nips)
 mod3.1 %>% summary()
 mod3.1 %>% anova()
-mod3.1 %>% tidy() %>% kable(digits = 3)
+mod3.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
 mod3.1 %>% anova %>% kable(digits = 3)
 ```
 
@@ -2442,7 +2451,7 @@ experiment.
 The same entanglement explains the difference between fitting methods. Nonlinear least
 squares on the original scale gives (*C*, *n*) = (2.04, 2.48); ordinary linear regression of
 log(*E*~rel~) on log(ρ~rel~) gives (7.5, 2.73). These are not competing physical claims:
-within the measured window the two curves agree to within roughly 10% (up to ~12% at
+within the measured window the two curves agree to within roughly 10% (up to \~12% at
 the window's lower edge), and they diverge only when extrapolated toward ρ~rel~ = 1, where the log-scale fit's slightly steeper
 slope compounds into an almost fourfold larger intercept (a factor of roughly
 (1/0.005)^Δ*n*^ ≈ 3.7 for Δ*n* = 0.25, where 0.005 is the mid-window relative density). The two (*C*, *n*) pairs are two points on the same

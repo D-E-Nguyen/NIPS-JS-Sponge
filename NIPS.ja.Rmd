@@ -1,0 +1,2032 @@
+---
+title: "NIPS-JS スポンジ — データと統計解析"
+author: "De Nguyen ([ORCID 0000-0001-5479-5927](https://orcid.org/0000-0001-5479-5927))"
+lang: ja
+output:
+  html_document:
+    toc: yes
+    toc_float:
+      collapsed: true
+    toc_depth: 3
+    number_sections: yes
+    anchor_sections: true
+    code_download: true
+    includes:
+      in_header: head-meta.ja.html
+    df_print: default
+    fig_width: 10
+    fig_height: 6
+  word_document:
+    toc: true
+    fig_width: 10
+    fig_height: 6
+    keep_md: true
+  pdf_document:
+    toc: yes
+editor_options:
+  markdown:
+    wrap: 120
+---
+
+<div style="text-align: right; margin: 0.2em 0 1.2em; font-size: 0.95em;">
+<a href="./" hreflang="en" lang="en">English</a> · <a href="vi.html" hreflang="vi" lang="vi">Tiếng Việt</a> · <strong>日本語</strong>
+</div>
+
+```{r setup, include=FALSE}
+# Global chunk options: code is hidden in the rendered report (echo = FALSE), so the
+# knitted document shows only figures and tables. Read this .Rmd file for the code.
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.retina = 2,
+                      dev = "svglite")  # vector figures; use dev = "png" for Word/PDF output
+
+library(psych)       # pairs.panels(): scatter-plot matrices with correlations
+library(factoextra)  # fviz_*(): publication-ready PCA graphics
+library(FactoMineR)  # PCA(): principal component analysis
+library(ggplot2)     # grammar-of-graphics plotting
+library(dplyr)       # %>% pipe used throughout
+library(cowplot)     # plot_grid(): combining plots into labelled panels
+library(broom)       # tidy(): turn model summaries into data frames
+library(knitr)       # kable(): formatted tables in the rendered document
+library(MASS)        # boxcox(): Box–Cox transformation profiles
+library(car)         # Anova(type = 2): order-free tests for the summary table
+library(rsm)         # response-surface models: FO()/SO(), canonical analysis, contour.lm()
+# emmeans is called via emmeans::emmeans() without attaching the package.
+
+## ---- Figure styling: one colour system for the whole document -------------------
+## Each design factor gets a single-hue ramp whose light -> dark order follows the
+## concentration order, so hue identifies the factor and darkness identifies the
+## level in every figure: SUS = blues, EtOH = reds. Both ramps are colour-blind-safe
+## (adjacent-step separation validated for deutan/protan/tritan vision). Box fills are
+## drawn at alpha 0.65 so that medians/whiskers stay readable on the darkest steps; the
+## overlaid dots carry the full-strength colours, and axis position encodes the level
+## in every gallery panel, so no information rides on the lightened fills alone.
+pal_sus  <- c("0.24" = "#5FB0E2", "0.3" = "#2171B5", "0.4" = "#08306B")
+pal_etoh <- c("0.2"  = "#FB6A4A", "0.5" = "#CB181D", "1"   = "#67000D")
+scale_sus  <- scale_fill_manual(values = pal_sus)
+scale_etoh <- scale_fill_manual(values = pal_etoh)
+scale_sus_line  <- scale_colour_manual(values = pal_sus)   # ellipse outlines in biplots
+scale_etoh_line <- scale_colour_manual(values = pal_etoh)
+col_accent  <- "#B2352C"                       # annotation accent: fit/reference lines
+col_bar     <- "#2171B5"                       # single-series bars (scree, contributions)
+pal_surface <- colorRampPalette(c("#F7FBFF", "#C9DDF0", "#8FBEE0", "#4A94CB"))(64)
+
+## Publication base theme: white background, black axis text, no decorative bolding.
+theme_pub <- theme_classic(base_size = 14) +
+  theme(
+    axis.text    = element_text(size = 13, face = "bold", colour = "black"),
+    axis.title   = element_text(size = 15, face = "bold"),
+    axis.line    = element_line(linewidth = 0.5, colour = "black"),
+    axis.ticks   = element_line(linewidth = 0.5, colour = "black"),
+    plot.title   = element_text(size = 16, face = "bold"),
+    legend.title = element_text(size = 13, face = "bold.italic"),
+    legend.text  = element_text(size = 12, face = "bold")
+  )
+```
+
+```{css doc-style, echo=FALSE}
+/* Typography and reading comfort (HTML output only) */
+body { font-size: 16px; line-height: 1.65; color: #1a1a1a; }
+h1, h2, h3, h4 { color: #08306B; }
+h1 { border-bottom: 2px solid #C9DDF0; padding-bottom: .25em; }
+
+/* Download strip: the one box a data-seeking visitor is looking for */
+.download {
+  background: #FDF6F5;
+  border-left: 4px solid #B2352C;
+  border-radius: 0 6px 6px 0;
+  padding: .7em 1.1em;
+  margin: 1.2em 0;
+}
+
+/* Interpretation call-outs: the discussion blocks are visually separated from
+   methods text so readers can scan figure -> box -> next section */
+.interpretation {
+  background: #F2F7FC;
+  border-left: 4px solid #2171B5;
+  border-radius: 0 6px 6px 0;
+  padding: .85em 1.15em;
+  margin: 1.3em 0;
+}
+.interpretation > p:first-child { margin: 0 0 0.35em 0; }
+.interpretation > p:first-child > strong:first-child { color: #2171B5; font-size: 1.04em; }
+
+/* Tables: quiet zebra striping, strong header rule */
+table { border-collapse: collapse; margin: 1em 0; }
+th { border-bottom: 2px solid #08306B; padding: 5px 12px; text-align: left; }
+td { padding: 4px 12px; }
+tbody tr:nth-child(even) { background: #F7FAFD; }
+
+/* Console output blocks: recessive, clearly non-prose */
+pre { border-left: 3px solid #DCE7F2; background: #FAFBFD; }
+```
+
+
+# 本ドキュメントについて
+
+本ドキュメントは、NIPS-JS スポンジ研究の基盤となるデータセットの文書化と統計解析の全体を収めたノートブックである。対象とする論文は以下の 2 報である。
+
+1. *Nonsolvent-Induced Phase Separation–Jet Spinning: An Innovative Technique for Producing
+   Cellulosic Nanofilms, Suspensions, and Nanofilm-Based Sponges* (2025), ACS Omega,
+   <https://doi.org/10.1021/acsomega.5c02353>
+2. *Mechanically tunable nanofilm-based cellulose acetate sponges via crosslinker-free
+   cryo-templating* (2025), Polymer Journal,
+   <https://doi.org/10.1038/s41428-025-01083-z>
+
+本データセットまたは本解析が研究に役立った場合は、上記の対応する論文を引用されたい。すぐに使える BibTeX エントリはリポジトリの `README.md` に用意されている。
+
+スポンジ 40 個は、2 つの実験因子 — ポリマー懸濁液濃度 (`SUS`: 0.24, 0.3, 0.4 wt%) とエタノール共溶媒濃度 (`EtOH`: 0.2, 0.5, 1 wt%) — にわたる 3 × 3 の二因子完全実施要因計画により作製し、各組合せの繰り返し数は 4–7 である (同梱データセットから数えた値であり、Polymer Journal の Experimental セクションには 3–5 と記載されている)。作製したスポンジは、一連の物理的・力学的応答変数によって特性評価した。
+
+本ドキュメントは、生データからモデルへと至るパイプラインとして構成されている。
+
+1. **研究データ** — 全応答変数の読み込みと概観。
+2. **分布の確認** — モデル化に先立って行う Shapiro–Wilk 検定、正規 Q–Q プロット、および Box–Cox プロファイル。
+3. **因子の効果 I: 水準別の分布** — 各応答変数の一因子箱ひげ図と、選択した応答変数の二因子箱ひげ図。
+4. **因子の効果 II: 回帰と ANOVA** — モデルに投入する各応答変数 (`Weight` を除くすべて) について、`SUS` と `EtOH` をカテゴリカルな説明変数とした線形モデル。選択した応答変数については交互作用モデルも加える。
+5. **応答変数間の相関** — Pearson および Spearman による解析。
+6. **多変量解析** — バイプロットを伴う主成分分析 (PCA)、多応答回帰、主成分得点に対する回帰、多変量分散分析 (MANOVA)、および ASCA (ANOVA 同時成分分析) による多変量変動の分割。
+7. **応答曲面解析** — `SUS` と `EtOH` を連続的な説明変数として扱う: 収縮率 (Shrinkage) の一次および二次応答曲面、正準分析、EtOH = 3 wt% のスポンジに対する検証、通常の回帰とのクロスチェック。
+8. **構造–物性スケーリング (Gibson–Ashby)** — 相対密度に対する相対弾性率の Gibson–Ashby べき乗則の当てはめ。
+9. **まとめ** — 全体像の簡潔な総括。
+
+データセットは 2 通りの表現で用いる: 因子版 `nips` (計画の水準を離散的な群として扱う。応答曲面解析の部分を除くすべての箇所で使用) と、数値版 `dat` (応答曲面モデルは連続的な説明変数を必要とする) である — 詳細は読み込みのセクションを参照されたい。
+
+::: {.download}
+**データとコードの入手.** 本ページのすべての解析は、付属する 2 つの小さな CSV ファイルから実行される: **[`NIPS.csv`](NIPS.csv)** (スポンジ 40 個のデータセット) と **[`NIPS_validation.csv`](NIPS_validation.csv)** (応答曲面法 (RSM) の検証用スポンジ 3 個) であり、クリックしてダウンロードすればそのまま実行できる。解析のソースファイルは本ページ右上の **Code ▾** ボタンから取得でき、完全なリポジトリ (データ + コード + ライセンス) は <https://github.com/D-E-Nguyen/NIPS-JS-Sponge> にある。科学的な内容については上記の論文を参照されたい。論文の補足資料 (SI) の表にも生データは掲載されているが、これらの CSV はすぐに使える形に整えた版である (導出列の計算方法は後述する)。データは CC BY 4.0 で提供される — 再利用の際には論文を引用されたい。
+:::
+
+**データ.** 完全なデータセットは `NIPS.csv` (スポンジ 40 個) として本リポジトリに同梱されており、ライセンスは CC BY 4.0 である — `DATA_LICENSE.md` を参照。形状に関する変数 (Weight … Shrinkage) は ACS Omega の補足資料 (Supporting Information) の表 S1 に、力学に関する変数 (Recovery … RS) は Polymer Journal の補足資料 (Supplementary Information) の表 S1 に対応する。両 SI の表は、同一の 40 個のスポンジを同じ行順で掲載している。導出された形状応答変数 (Volume、Density、Porosity、Shrinkage) は、論文の式に従って Weight/Diameter/Height から再計算した完全精度の値で収録されている — SI の表では丸めた値が印刷されているのに対し、公表された統計量は丸める前の値に基づいて計算されている。RSM による予測の検証に用いた追加のスポンジ 3 個 (EtOH = 3 wt%) は `NIPS_validation.csv` として提供される。
+
+**列の一覧** (測定プロトコルは論文に記載されている):
+
+| 列 | 役割 | 説明 |
+|---|---|---------|
+| `ID` | 識別子 | 試料番号。読み込み時に行名となる。 |
+| `SUS` | 計画因子 | ポリマー懸濁液濃度 (wt%; 水準 0.24 / 0.3 / 0.4)。 |
+| `EtOH` | 計画因子 | エタノール共溶媒濃度 (wt%; 水準 0.2 / 0.5 / 1)。 |
+| `Weight` | 応答変数 | スポンジの重量 (g)。一次測定値 (電子天秤)。 |
+| `Diameter`, `Height` | 応答変数 | スポンジの寸法 (mm)。一次測定値 (ノギス)。 |
+| `Volume` | 応答変数 | かさ体積 (cm³)。円柱として導出: V = π/4 · h · d²。 |
+| `Density` | 応答変数 | かさ密度 (kg·m⁻³)。導出値: ρ = m/V。 |
+| `Porosity` | 応答変数 | 空隙率 (%)。導出値: 100 · (1 − ρ/ρ~CA~)。ここで ρ~CA~ = 1311 kg·m⁻³。 |
+| `Shrinkage` | 応答変数 | 体積収縮率 (%)。導出値: 100 · (1 − V/V~suspension~)。懸濁液の量は 15 mL。 |
+| `Recovery` | 応答変数 | 回復率: 応力緩和試験の後に保持されている初期高さの割合 (%)。 |
+| `Modulus` | 応答変数 | 圧縮試験から得られる見かけの弾性率 E\* (kPa)。 |
+| `A0`; `A1`,`t1`; `A2`,`t2`; `A3`,`t3` | 応答変数 | 応力緩和曲線に対する、マクスウェル要素を 3 個並列に連結した一般化マクスウェルモデルによるフィット: 平衡応力 σ~e~ (`A0`, kPa)、各マクスウェル要素の応力 σ~1–3~ (`A1`–`A3`, kPa)、および緩和時間 τ~1–3~ (`t1`–`t3`, s)。 |
+| `T` | 応答変数 | 特性緩和時間 τ (s): 構成する緩和時間の和 t1 + t2 + t3。注意: `T` は R では `TRUE` の省略形でもあるため、この列へのアクセスは常にデータフレーム経由 (例: `nips$T`) とし、裸の `T` としては決して参照しない。 |
+| `RS` | 応答変数 | 残留応力 σ~r~ (無次元): 緩和試験の終了時点でスポンジがなお担持している規格化応力。 |
+
+**公表結果との対応.** Height、Diameter、Shrinkage、Density の加法モデルと分散分析 (ANOVA) は ACS Omega の表 1 および表 S2–S5 を再現し、これらの変数の一因子箱ひげ図は ACS Omega の図 5 に対応する。Modulus、RS、T、Recovery の交互作用モデルは Polymer Journal の表 S2 を再現し、Spearman 解析は Polymer Journal の図 S6 (Modulus、RS、T、Recovery のサブセットを使用) に対応し、Gibson–Ashby 当てはめは Polymer Journal の図 5b のスケーリング定数 (*C* = 2.04, *n* = 2.48) を再現する。一次の応答曲面モデルは ACS Omega の表 2、表 S6、および図 6j を再現する。1 つ注意すべき点は `T` (特性緩和時間 τ) に関するものである: Polymer Journal の表 S2 と図 S6 におけるこの変数の統計量は、マクスウェルフィットのパラメータの旧版に基づいて計算されており、この最終データセットで解析を再実行すると値が目に見えて変化する。最も顕著な点として、公表された表では懸濁液濃度が τ に及ぼす効果は強く有意と報告されているのに対し、本データセットではその効果は有意性の境界まで弱まる: 公表解析と同じ逐次型 (タイプ I) 検定では、加法モデルで *P* = 0.051、交互作用を含めたモデルで 0.038 となり、本ドキュメント後半の応答変数横断サマリーで用いる順序調整済みのタイプ II 検定では、それぞれ 0.080 および 0.062 となる — すなわち、4 つの仕様のうち 0.05 の閾値を下回るのは 1 つだけである。より大きな結論 — エタノールは緩和を長引かせること、および交互作用は有意でないこと — は両版で成り立ち、他のすべての変数は公表値を再現する。これらの範囲を超える解析 — Pearson パネル、PCA、MANOVA、ASCA、多応答モデル、Box–Cox プロファイル、および二次応答曲面 — は、出版を支えたものの論文には掲載されなかった探索的解析である。
+
+**この翻訳版について.** 本ページは解析ノートブック ([英語原版](./)、[ベトナム語版](vi.html)) の日本語版である。R コードはすべて原版と同一であり、図表 (軸ラベル・凡例・列見出しを含む) は論文およびソースコードと一致する英語表記のままとした。数値の表記は R の出力に合わせている (例: 0.24)。
+
+# 研究データ
+
+## データの読み込み
+
+```{r import-data}
+# Read the data; the first column (ID) becomes row names, so samples keep their labels
+# in plots such as the labelled PCA biplots.
+nips <- read.csv("NIPS.csv", header = TRUE, row.names = 1)
+
+# Two representations of the same dataset are used in this document:
+#   dat  — SUS and EtOH stay numeric: the response-surface models need continuous
+#          predictors;
+#   nips — SUS and EtOH become factors: everywhere else the design levels are treated
+#          as discrete groups.
+dat <- nips
+
+nips$SUS  <- as.factor(nips$SUS)
+nips$EtOH <- as.factor(nips$EtOH)
+
+# Make the baseline explicit: the first (lowest) level of each factor is the reference
+# group that regression coefficients are contrasted against. (Level 1 is already the
+# default reference, so this is documentation more than transformation.)
+nips <- within(nips, SUS  <- relevel(SUS,  ref = 1))
+nips <- within(nips, EtOH <- relevel(EtOH, ref = 1))
+
+# head(nips)  # uncomment to preview the imported data
+```
+
+## 全応答変数の箱ひげ図
+
+```{r overview-boxplots}
+# Quick overview of every response variable (SUS and EtOH excluded).
+# Left: raw values — scales differ wildly between variables.
+# Right: the same data standardised (z-scores), which makes spreads comparable
+# and helps to spot outliers on a common scale.
+resp_vars <- setdiff(names(nips), c("SUS", "EtOH"))
+par(cex.main = 1.4, font.lab = 2, cex.lab = 1.2)
+boxplot(nips[, resp_vars], main = "Box plot: raw values", ylab = "Raw value", col = "#C6DBEF", las = 2, cex.axis = 0.8)
+boxplot(scale(nips[, resp_vars], center = TRUE), main = "Box plot: standardized z-scores", ylab = "z-score", col = "#C6DBEF", las = 2, cex.axis = 0.8)
+```
+
+::: {.interpretation}
+**解釈.**
+
+生の値のパネルが主に示しているのは、変数間で測定尺度がいかに異なるかである。`t3` と `T` が数百秒に及ぶ一方で、Density と応力パラメータはゼロ近傍に位置しており、それゆえ標準化したパネルの方がより多くの情報を与える。標準化が何を行い、何を行わないかには注意されたい。標準化はすべての変数を同一の標準偏差に揃えるため、箱の *高さ* はもはやどの応答変数が最も大きく変動するかを示さない。箱の高さが明らかにするのは分布の形状である。すなわち、データが中央に集中せず四分位点の側へ広がっていると、(標準化によって) 固定された標準偏差に対して箱は相対的に高くなる。これはしばしば、複数の処理群が異なる水準に位置していることの表れであり、ここでは Density と Modulus がその例である。この捉え方は、後で行う主成分分析 (PCA) にもそのまま当てはまる。PCA も同様に、成分を抽出する前に変数を標準化するからである。
+:::
+
+# 分布の確認
+
+以下の線形モデルは残差がおおむね正規分布に従うことを仮定しているため、まず各応答変数について正規性を確認する。
+
+## Shapiro–Wilk 検定
+
+H₀: 標本は正規分布から得られたものである。 *P* 値が 0.05 を **上回る** ことは、データが正規性からの有意な乖離を示していない (正規性の仮定と整合的である) ことを意味する。これに対して *P* 値が 0.05 を下回る場合は、正規性からの乖離があることを示す。
+
+```{r shapiro-tests}
+shapiro.test(nips$Weight)
+shapiro.test(nips$Diameter)
+shapiro.test(nips$Height)
+shapiro.test(nips$Volume)
+shapiro.test(nips$Density)
+shapiro.test(nips$Porosity)
+shapiro.test(nips$Shrinkage)
+shapiro.test(nips$Recovery)
+shapiro.test(nips$Modulus)
+shapiro.test(nips$A0)
+shapiro.test(nips$A1)
+shapiro.test(nips$t1)
+shapiro.test(nips$A2)
+shapiro.test(nips$t2)
+shapiro.test(nips$A3)
+shapiro.test(nips$t3)
+shapiro.test(nips$T)
+shapiro.test(nips$RS)
+```
+
+::: {.interpretation}
+**解釈.**
+
+有意水準 0.05 では、Weight、Density、Porosity、Modulus およびマクスウェルモデルのパラメータの大半 (`A0`–`A3`、`t1`、`t2`) が正規性から有意に乖離する一方、Diameter、Height、Volume、Shrinkage、Recovery、`t3`、`T`、`RS` は乖離を示さない。注目すべき点が 2 つある。第一に、Density と Porosity はまったく同じ統計量 (*W* ≈ 0.908) を返す。Porosity は Density のアフィン変換であり、この検定はそのような変換に対して不変だからである。同じことは Volume と Shrinkage の間にも生じている。第二に、これらは 9 つの処理群すべてをプールした *周辺* 分布に対する検定である。SUS に強く応答する変数 (Modulus など) はよく分離した 3 つの群の混合となるため、そのプールした分布は多峰的に見え、各条件内の測定値が完全に良好に振る舞っていても正規性を「満たさない」と判定される。以下のモデルにとって実際に重要な仮定は *残差* の正規性であり、これはモデルごとに診断プロットで確認する。
+:::
+
+## 正規 Q–Q プロット
+
+Shapiro–Wilk 検定を視覚的に補完するものである。点が基準線に沿って並んでいれば正規性と整合的であり、系統的な湾曲は歪みを示し、両端で点が線から離れていく場合は裾の重い分布や外れ値を示唆する。
+
+```{r qq-plots}
+par(mfrow = c(3, 6), cex.main = 1.6, font.axis = 2)   # 18 plots fill the 3 x 6 grid
+qqnorm(nips$Weight, main = "Weight"); qqline(nips$Weight, col = col_accent, lwd = 1.2)
+qqnorm(nips$Diameter, main = "Diameter"); qqline(nips$Diameter, col = col_accent, lwd = 1.2)
+qqnorm(nips$Height, main = "Height"); qqline(nips$Height, col = col_accent, lwd = 1.2)
+qqnorm(nips$Volume, main = "Volume"); qqline(nips$Volume, col = col_accent, lwd = 1.2)
+qqnorm(nips$Density, main = "Density"); qqline(nips$Density, col = col_accent, lwd = 1.2)
+qqnorm(nips$Porosity, main = "Porosity"); qqline(nips$Porosity, col = col_accent, lwd = 1.2)
+qqnorm(nips$Shrinkage, main = "Shrinkage"); qqline(nips$Shrinkage, col = col_accent, lwd = 1.2)
+qqnorm(nips$Recovery, main = "Recovery"); qqline(nips$Recovery, col = col_accent, lwd = 1.2)
+qqnorm(nips$Modulus, main = "Modulus"); qqline(nips$Modulus, col = col_accent, lwd = 1.2)
+qqnorm(nips$A0, main = "A0"); qqline(nips$A0, col = col_accent, lwd = 1.2)
+qqnorm(nips$A1, main = "A1"); qqline(nips$A1, col = col_accent, lwd = 1.2)
+qqnorm(nips$t1, main = "t1"); qqline(nips$t1, col = col_accent, lwd = 1.2)
+qqnorm(nips$A2, main = "A2"); qqline(nips$A2, col = col_accent, lwd = 1.2)
+qqnorm(nips$t2, main = "t2"); qqline(nips$t2, col = col_accent, lwd = 1.2)
+qqnorm(nips$A3, main = "A3"); qqline(nips$A3, col = col_accent, lwd = 1.2)
+qqnorm(nips$t3, main = "t3"); qqline(nips$t3, col = col_accent, lwd = 1.2)
+qqnorm(nips$T, main = "T"); qqline(nips$T, col = col_accent, lwd = 1.2)
+qqnorm(nips$RS, main = "RS"); qqline(nips$RS, col = col_accent, lwd = 1.2)
+```
+
+::: {.interpretation}
+**解釈.**
+
+Q–Q プロットは同じ結果を図として物語っている。Shapiro–Wilk 検定で乖離が検出された変数 (Modulus や `A0` など) は基準線から曲がって離れており、上述の群の混合という説明と整合的である。一方、Height、Recovery、Shrinkage などの変数は基準線にほぼ沿っている。
+:::
+
+## Box–Cox 変換
+
+モデル化する各応答変数の分布に対する補完的な確認である (`Weight` は Density = m/V を通じてのみ解析に入るため除外する)。`boxcox()` は、モデル `y^(λ) ~ 1` に対するべき変換パラメータ λ の対数尤度のプロファイルを描く (λ = 1: 変換不要、λ = 0: 対数変換、λ = −1: 逆数変換)。ピーク周辺の 95% 信頼区間が 1 を含むならば、無変換のままの変数で十分である。なお、Box–Cox 変換は厳密に正のデータを必要とすることに注意されたい。
+
+### 対数尤度プロファイル
+
+```{r boxcox-profiles}
+par(mfrow = c(3, 3))   # 17 profiles: rendered as two 3 x 3 pages
+boxcox(nips$Diameter ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Diameter", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Height ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Height", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Volume ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Volume", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Density ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Density", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Porosity ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Porosity", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Shrinkage ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Shrinkage", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Recovery ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Recovery", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$Modulus ~ 1, lambda = seq(-8, 8, 0.1)); mtext("Modulus", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A0 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A0", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$A3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("A3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t1 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t1", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t2 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t2", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$t3 ~ 1, lambda = seq(-8, 8, 0.1)); mtext("t3", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$T ~ 1, lambda = seq(-8, 8, 0.1)); mtext("T", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+boxcox(nips$RS ~ 1, lambda = seq(-8, 8, 0.1)); mtext("RS", side = 3, line = 1, at = 0, col = "#2171B5", las = 1, cex = 1.1, font = 2)
+```
+
+### 応答変数ごとの最適 λ
+
+上の各プロファイルを最大化する λ の値を 1 つの表にまとめたものである。
+
+```{r boxcox-lambda}
+boxcox_vars <- c("Diameter", "Height", "Volume", "Density", "Porosity", "Shrinkage",
+                 "Recovery", "Modulus", "A0", "A1", "A2", "A3", "t1", "t2", "t3", "T", "RS")
+
+lambda_opt <- sapply(boxcox_vars, function(v) {
+  # boxcox() refits the model internally, so the response must be reachable from the
+  # formula's own environment — extract it into a local variable and use the formula
+  # interface (boxcox(y ~ 1)); boxcox(lm(nips[[v]] ~ 1)) breaks under knitting because
+  # the refit cannot see `v`.
+  y <- nips[[v]]
+  # The default search grid is lambda in [-2, 2]; several variables here peak outside it
+  # and would be silently reported at the boundary, so the grid is widened. Values still
+  # sitting at +/-8 below are bounds, not estimates.
+  prof <- boxcox(y ~ 1, lambda = seq(-8, 8, 0.1), plotit = FALSE)
+  prof$x[which.max(prof$y)]     # λ at the log-likelihood maximum
+})
+
+kable(data.frame(Variable = names(lambda_opt), `Optimal λ` = round(lambda_opt, 2),
+                 check.names = FALSE),
+      row.names = FALSE)
+```
+
+::: {.interpretation}
+**解釈.**
+
+最適な λ は応答変数間で大きく異なり、応力に関する量 (Modulus、`A0`–`A3`) では 0 の近く、すなわち対数変換に相当する値に位置する。これらの変数は懸濁液濃度に対して乗法的に増大するから、意外な結果ではない。この表には実務上の警告が 1 つ埋め込まれている。`boxcox()` は既定では λ ∈ [−2, 2] の範囲しか探索しないが、これらの変数のうちいくつかはその範囲の外にピークを持つ。既定のままでは、探索範囲の境界に達したことが示されないまま、一見きれいな「−2」や「+2」として報告されてしまうところであった。ここでは探索グリッドを広げており、それでもなお新しい上下限に張り付いている値は、推定値ではなく境界値として読むべきである。これらのプロファイルには Shapiro–Wilk 検定と同じ留意点も当てはまる。すなわち、プールしたデータ (`y ~ 1`) に対して計算されているため、見かけの非正規性の多くは条件内の歪みではなく要因計画そのものに由来する。したがって本ドキュメントの解析は、係数が物理単位を保つ元の尺度のまま行い、モデルごとの残差診断に依拠する。振幅変数を対数尺度で再フィットしてみることは、関心のある読者には有意義な演習となるだろう。
+:::
+
+# 因子の効果 I: 水準別の分布
+
+応答変数の分布を因子の水準別に示す。箱は中央値と四分位範囲を表し、重ねて描いた点は個々の試料であるため、各群の標本数とばらつきを一目で把握できる。
+
+```{r boxplot-theme}
+# Shared theme for all boxplot panels in this section (identical styling throughout).
+theme_box <- theme_pub + theme(aspect.ratio = 1, legend.position = "bottom")
+```
+
+## 一因子の箱ひげ図
+
+各応答変数を一度に 1 因子ずつプロットする。パネル A は `SUS` 別、パネル B は `EtOH` 別にグループ化したものである。
+
+### 直径 (Diameter)
+
+```{r box1f-diameter}
+p1.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Diameter (mm)")
+
+p2.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Diameter (mm)")
+
+plot_grid(p1.1, p2.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 高さ (Height)
+
+```{r box1f-height}
+p1.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Height (mm)")
+
+p2.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Height (mm)")
+
+plot_grid(p1.2, p2.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 体積 (Volume)
+
+```{r box1f-volume}
+p1.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+p2.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+plot_grid(p1.3, p2.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 密度 (Density)
+
+```{r box1f-density}
+p1.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+p2.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+plot_grid(p1.4, p2.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 空隙率 (Porosity)
+
+```{r box1f-porosity}
+p1.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Porosity (%)")
+
+p2.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Porosity (%)")
+
+plot_grid(p1.5, p2.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 収縮率 (Shrinkage)
+
+```{r box1f-shrinkage}
+p1.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Shrinkage (%)")
+
+p2.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Shrinkage (%)")
+
+plot_grid(p1.6, p2.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 回復率 (Recovery)
+
+```{r box1f-recovery}
+p1.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Recovery (%)")
+
+p2.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Recovery (%)")
+
+plot_grid(p1.7, p2.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 弾性率 (Modulus)
+
+```{r box1f-modulus}
+p1.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
+
+p2.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
+
+plot_grid(p1.8, p2.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A0
+
+```{r box1f-a0}
+p1.9 <- ggplot(nips, aes(x = SUS, y = A0)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
+
+p2.9 <- ggplot(nips, aes(x = EtOH, y = A0)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A0, ")*bold(sigma)[bold(e)]*bold(" (kPa)")))
+
+plot_grid(p1.9, p2.9, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A1
+
+```{r box1f-a1}
+p1.10 <- ggplot(nips, aes(x = SUS, y = A1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
+
+p2.10 <- ggplot(nips, aes(x = EtOH, y = A1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A1, ")*bold(sigma)[bold(1)]*bold(" (kPa)")))
+
+plot_grid(p1.10, p2.10, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t1
+
+```{r box1f-t1}
+p1.11 <- ggplot(nips, aes(x = SUS, y = t1)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
+
+p2.11 <- ggplot(nips, aes(x = EtOH, y = t1)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t1, ")*bold(tau)[bold(1)]*bold(" (s)")))
+
+plot_grid(p1.11, p2.11, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A2
+
+```{r box1f-a2}
+p1.12 <- ggplot(nips, aes(x = SUS, y = A2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
+
+p2.12 <- ggplot(nips, aes(x = EtOH, y = A2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A2, ")*bold(sigma)[bold(2)]*bold(" (kPa)")))
+
+plot_grid(p1.12, p2.12, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t2
+
+```{r box1f-t2}
+p1.13 <- ggplot(nips, aes(x = SUS, y = t2)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
+
+p2.13 <- ggplot(nips, aes(x = EtOH, y = t2)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t2, ")*bold(tau)[bold(2)]*bold(" (s)")))
+
+plot_grid(p1.13, p2.13, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### A3
+
+```{r box1f-a3}
+p1.14 <- ggplot(nips, aes(x = SUS, y = A3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
+
+p2.14 <- ggplot(nips, aes(x = EtOH, y = A3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("A3, ")*bold(sigma)[bold(3)]*bold(" (kPa)")))
+
+plot_grid(p1.14, p2.14, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### t3
+
+```{r box1f-t3}
+p1.15 <- ggplot(nips, aes(x = SUS, y = t3)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
+
+p2.15 <- ggplot(nips, aes(x = EtOH, y = t3)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("t3, ")*bold(tau)[bold(3)]*bold(" (s)")))
+
+plot_grid(p1.15, p2.15, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### T
+
+```{r box1f-bigT}
+# Note: inside aes(), `T` refers to the data column T (data masking), not to TRUE.
+p1.16 <- ggplot(nips, aes(x = SUS, y = T)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus + guides(fill = "none") +
+  labs(x = "SUS (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
+
+p2.16 <- ggplot(nips, aes(x = EtOH, y = T)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh + guides(fill = "none") +
+  labs(x = "EtOH (wt%)", y = expression(bold("T, ")*bold(tau)*bold(" (s)")))
+
+plot_grid(p1.16, p2.16, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+## 二因子の箱ひげ図
+
+両因子を同時に示す。一方の因子を x 軸に、他方の因子を塗り分けの色として表す (2 つ目のパネルではその逆)。群間でパターンが平行であれば加法的な効果が、交差していれば交互作用の存在が示唆される。
+
+### 直径 (Diameter)
+
+```{r box2f-diameter}
+p3.1 <- ggplot(nips, aes(x = EtOH, y = Diameter)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Diameter (mm)")
+
+p4.1 <- ggplot(nips, aes(x = SUS, y = Diameter)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Diameter (mm)")
+
+plot_grid(p3.1, p4.1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 高さ (Height)
+
+```{r box2f-height}
+p3.2 <- ggplot(nips, aes(x = EtOH, y = Height)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Height (mm)")
+
+p4.2 <- ggplot(nips, aes(x = SUS, y = Height)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Height (mm)")
+
+plot_grid(p3.2, p4.2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 体積 (Volume)
+
+```{r box2f-volume}
+p3.3 <- ggplot(nips, aes(x = EtOH, y = Volume)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+p4.3 <- ggplot(nips, aes(x = SUS, y = Volume)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Volume (cm")^bold("3")*bold(")")))
+
+plot_grid(p3.3, p4.3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 密度 (Density)
+
+```{r box2f-density}
+p3.4 <- ggplot(nips, aes(x = EtOH, y = Density)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+p4.4 <- ggplot(nips, aes(x = SUS, y = Density)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = expression(bold("Density (kg m")^bold("-3")*bold(")")))
+
+plot_grid(p3.4, p4.4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 空隙率 (Porosity)
+
+```{r box2f-porosity}
+p3.5 <- ggplot(nips, aes(x = EtOH, y = Porosity)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Porosity (%)")
+
+p4.5 <- ggplot(nips, aes(x = SUS, y = Porosity)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Porosity (%)")
+
+plot_grid(p3.5, p4.5, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 収縮率 (Shrinkage)
+
+```{r box2f-shrinkage}
+p3.6 <- ggplot(nips, aes(x = EtOH, y = Shrinkage)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Shrinkage (%)")
+
+p4.6 <- ggplot(nips, aes(x = SUS, y = Shrinkage)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Shrinkage (%)")
+
+plot_grid(p3.6, p4.6, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 回復率 (Recovery)
+
+```{r box2f-recovery}
+p3.7 <- ggplot(nips, aes(x = EtOH, y = Recovery)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Recovery (%)")
+
+p4.7 <- ggplot(nips, aes(x = SUS, y = Recovery)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Recovery (%)")
+
+plot_grid(p3.7, p4.7, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+### 弾性率 (Modulus)
+
+```{r box2f-modulus}
+p3.8 <- ggplot(nips, aes(x = EtOH, y = Modulus)) + geom_boxplot(aes(fill = SUS), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = SUS), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_sus +
+  labs(x = "EtOH (wt%)", fill = "SUS (wt%)", y = "Apparent modulus E* (kPa)")
+
+p4.8 <- ggplot(nips, aes(x = SUS, y = Modulus)) + geom_boxplot(aes(fill = EtOH), alpha = 0.65, position = position_dodge(.8)) +
+  geom_dotplot(aes(fill = EtOH), binaxis = 'y', stackdir = 'center', position = position_dodge(.8)) +
+  theme_box + scale_etoh +
+  labs(x = "SUS (wt%)", fill = "EtOH (wt%)", y = "Apparent modulus E* (kPa)")
+
+plot_grid(p3.8, p4.8, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+::: {.interpretation}
+**この一連の図が示すもの.**
+
+一因子のパネルを応答変数全体にわたって読み取ると、2 つの因子が役割を分担していることが分かる。懸濁液濃度は主に、スポンジに *どれだけの材料が入るか* を決める。すなわち Density と Modulus は SUS とともに急激に増加し、応力振幅 `A0`–`A3` もこれに追随する。一方、エタノール濃度は主に *凍結中に構造がどのように形成されるか* に影響する。すなわち EtOH の増加とともに Diameter は増加し Shrinkage は減少し、ここに示した緩和に関連する量 (`T`、Recovery) は上方にシフトする。(`RS` も同様の挙動を示すが、この一連の図にはそのパネルがない — 回帰の節で定量化する。) Height は両因子とともに増加するが、EtOH に対する傾向は後述のモデルでは有意水準に届かない (*P* = 0.066)。二因子のパネルでは、箱のパターンがほぼ平行であることから、大半の応答変数では加法的な挙動が示唆される。一方、Modulus では EtOH の効果が SUS の各水準で明らかに異なって見え、次のパートで見いだされる有意な SUS × EtOH 交互作用を予感させる。こうした印象のそれぞれに対して、正式な検定が *P* 値を与える (形状に関する応答変数は ACS Omega 論文で、力学に関する応答変数は Polymer Journal 論文で議論されている)。
+:::
+
+# 因子の効果 II: 回帰と ANOVA
+
+箱ひげ図ギャラリーから得られた視覚的な印象を、ここではデータの因子版 (`nips`) に対する線形モデルによって定量化する。
+
+## 応答変数ごとの線形モデルと ANOVA
+
+各応答変数は `response ~ SUS + EtOH`、すなわち両因子をカテゴリカル変数として扱う 2 因子の加法モデルでモデル化される。各応答変数について、次の 4 種類の出力を示す。
+
+- `summary()` — 係数の推定値 (各水準を基準水準と対比したもの) とその有意性、およびモデルの決定係数 *R*²。
+- `anova()` — 各因子の全体的な効果を検定する分散分析 (ANOVA) 表。
+- 同じ 2 種類の表を `tidy()`/`kable()` で整形し直した、コンパクトで論文掲載にそのまま使える表。
+- モデルの仮定を確認するための標準的な診断プロット (残差 vs 当てはめ値、正規 Q–Q、スケール–ロケーション、残差 vs てこ比)。
+
+この後の表を読むための補足を 2 点述べる。まず *自由度* について: 各因子は 3 水準をもつため、その自由度は 2 である。加法モデルの残差自由度は 40 − 1 − 2 − 2 = 35 となり、交互作用モデルでは自由度 4 の `SUS:EtOH` 項が加わるため残差自由度は 31 となる。次に *係数* について: R のデフォルトである treatment コーディング (ダミーコーディング) のもとでは、たとえば `SUS0.3` のような係数は、エタノール水準を固定したときの 0.3 wt% 群と基準水準である 0.24 wt% 群との推定差を表す。また切片は、2 つの基準水準を同時にとる条件 (SUS 0.24, EtOH 0.2 wt%) における応答の予測値であって、全体平均ではない。
+
+一部の応答変数については、`SUS:EtOH` 交互作用項を加えた第 2 のモデルを当てはめ、一方の因子の効果が他方の因子の水準に依存するかどうかを検定する。(R のモデル式の記法では、`SUS + EtOH + SUS*EtOH` は主効果と交互作用項とに展開され、`SUS*EtOH` と等価である。) Polymer Journal 論文 (表 S2) で交互作用込みで解析された 4 つの応答変数は Modulus、RS、T、Recovery であり、Height、Diameter、Shrinkage、Density の加法モデルは ACS Omega に掲載されたもの (表 1、表 S2–S5) である。
+
+### 直径 (Diameter)
+
+```{r lm-diameter}
+mod1 <- lm(nips$Diameter ~ SUS + EtOH, data = nips)
+mod1 %>% summary()
+mod1 %>% anova()
+mod1 %>% tidy() %>% kable(digits = 3)
+mod1 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-diameter-diag}
+par(mfrow = c(2, 2))
+mod1 %>% plot()
+```
+
+### 高さ (Height)
+
+```{r lm-height}
+mod2 <- lm(nips$Height ~ SUS + EtOH, data = nips)
+mod2 %>% summary()
+mod2 %>% anova()
+mod2 %>% tidy() %>% kable(digits = 3)
+mod2 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-height-diag}
+par(mfrow = c(2, 2))
+mod2 %>% plot()
+```
+
+### 体積 (Volume)
+
+```{r lm-volume}
+mod3 <- lm(nips$Volume ~ SUS + EtOH, data = nips)
+mod3 %>% summary()
+mod3 %>% anova()
+mod3 %>% tidy() %>% kable(digits = 3)
+mod3 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-volume-diag}
+par(mfrow = c(2, 2))
+mod3 %>% plot()
+```
+
+### 密度 (Density)
+
+```{r lm-density}
+mod4 <- lm(nips$Density ~ SUS + EtOH, data = nips)
+mod4 %>% summary()
+mod4 %>% anova()
+mod4 %>% tidy() %>% kable(digits = 3)
+mod4 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-density-diag}
+par(mfrow = c(2, 2))
+mod4 %>% plot()
+```
+
+### 空隙率 (Porosity)
+
+```{r lm-porosity}
+mod5 <- lm(nips$Porosity ~ SUS + EtOH, data = nips)
+mod5 %>% summary()
+mod5 %>% anova()
+mod5 %>% tidy() %>% kable(digits = 3)
+mod5 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-porosity-diag}
+par(mfrow = c(2, 2))
+mod5 %>% plot()
+```
+
+### 収縮率 (Shrinkage)
+
+```{r lm-shrinkage}
+mod6 <- lm(nips$Shrinkage ~ SUS + EtOH, data = nips)
+mod6 %>% summary()
+mod6 %>% anova()
+mod6 %>% tidy() %>% kable(digits = 3)
+mod6 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-shrinkage-diag}
+par(mfrow = c(2, 2))
+mod6 %>% plot()
+```
+
+### 回復率 (Recovery)
+
+```{r lm-recovery}
+mod7 <- lm(nips$Recovery ~ SUS + EtOH, data = nips)
+mod7 %>% summary()
+mod7 %>% anova()
+mod7 %>% tidy() %>% kable(digits = 3)
+mod7 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-recovery-diag}
+par(mfrow = c(2, 2))
+mod7 %>% plot()
+```
+
+#### 回復率 (Recovery) — 交互作用モデル
+
+```{r lm-recovery-int}
+mod7a <- lm(nips$Recovery ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod7a %>% summary()
+mod7a %>% anova()
+mod7a %>% tidy() %>% kable(digits = 3)
+mod7a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-recovery-int-diag}
+par(mfrow = c(2, 2))
+mod7a %>% plot()
+```
+
+### 弾性率 (Modulus)
+
+```{r lm-modulus}
+mod8 <- lm(nips$Modulus ~ SUS + EtOH, data = nips)
+mod8 %>% summary()
+mod8 %>% anova()
+mod8 %>% tidy() %>% kable(digits = 3)
+mod8 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-modulus-diag}
+par(mfrow = c(2, 2))
+mod8 %>% plot()
+```
+
+#### 弾性率 (Modulus) — 交互作用モデル
+
+```{r lm-modulus-int}
+mod8a <- lm(nips$Modulus ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod8a %>% summary()
+mod8a %>% anova()
+mod8a %>% tidy() %>% kable(digits = 3)
+mod8a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-modulus-int-diag}
+par(mfrow = c(2, 2))
+mod8a %>% plot()
+```
+
+### A0
+
+```{r lm-a0}
+mod9 <- lm(nips$A0 ~ SUS + EtOH, data = nips)
+mod9 %>% summary()
+mod9 %>% anova()
+mod9 %>% tidy() %>% kable(digits = 3)
+mod9 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a0-diag}
+par(mfrow = c(2, 2))
+mod9 %>% plot()
+```
+
+#### A0 — 交互作用モデル
+
+```{r lm-a0-int}
+mod9a <- lm(nips$A0 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod9a %>% summary()
+mod9a %>% anova()
+mod9a %>% tidy() %>% kable(digits = 3)
+mod9a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a0-int-diag}
+par(mfrow = c(2, 2))
+mod9a %>% plot()
+```
+
+### A1
+
+```{r lm-a1}
+mod10 <- lm(nips$A1 ~ SUS + EtOH, data = nips)
+mod10 %>% summary()
+mod10 %>% anova()
+mod10 %>% tidy() %>% kable(digits = 3)
+mod10 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a1-diag}
+par(mfrow = c(2, 2))
+mod10 %>% plot()
+```
+
+### t1
+
+```{r lm-t1}
+mod11 <- lm(nips$t1 ~ SUS + EtOH, data = nips)
+mod11 %>% summary()
+mod11 %>% anova()
+mod11 %>% tidy() %>% kable(digits = 3)
+mod11 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t1-diag}
+par(mfrow = c(2, 2))
+mod11 %>% plot()
+```
+
+#### t1 — 交互作用モデル
+
+```{r lm-t1-int}
+mod11a <- lm(nips$t1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod11a %>% summary()
+mod11a %>% anova()
+mod11a %>% tidy() %>% kable(digits = 3)
+mod11a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t1-int-diag}
+par(mfrow = c(2, 2))
+mod11a %>% plot()
+```
+
+### A2
+
+```{r lm-a2}
+mod12 <- lm(nips$A2 ~ SUS + EtOH, data = nips)
+mod12 %>% summary()
+mod12 %>% anova()
+mod12 %>% tidy() %>% kable(digits = 3)
+mod12 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a2-diag}
+par(mfrow = c(2, 2))
+mod12 %>% plot()
+```
+
+### t2
+
+```{r lm-t2}
+mod13 <- lm(nips$t2 ~ SUS + EtOH, data = nips)
+mod13 %>% summary()
+mod13 %>% anova()
+mod13 %>% tidy() %>% kable(digits = 3)
+mod13 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t2-diag}
+par(mfrow = c(2, 2))
+mod13 %>% plot()
+```
+
+#### t2 — 交互作用モデル
+
+```{r lm-t2-int}
+mod13a <- lm(nips$t2 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod13a %>% summary()
+mod13a %>% anova()
+mod13a %>% tidy() %>% kable(digits = 3)
+mod13a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t2-int-diag}
+par(mfrow = c(2, 2))
+mod13a %>% plot()
+```
+
+### A3
+
+```{r lm-a3}
+mod14 <- lm(nips$A3 ~ SUS + EtOH, data = nips)
+mod14 %>% summary()
+mod14 %>% anova()
+mod14 %>% tidy() %>% kable(digits = 3)
+mod14 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-a3-diag}
+par(mfrow = c(2, 2))
+mod14 %>% plot()
+```
+
+### t3
+
+```{r lm-t3}
+mod15 <- lm(nips$t3 ~ SUS + EtOH, data = nips)
+mod15 %>% summary()
+mod15 %>% anova()
+mod15 %>% tidy() %>% kable(digits = 3)
+mod15 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t3-diag}
+par(mfrow = c(2, 2))
+mod15 %>% plot()
+```
+
+#### t3 — 交互作用モデル
+
+```{r lm-t3-int}
+mod15a <- lm(nips$t3 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod15a %>% summary()
+mod15a %>% anova()
+mod15a %>% tidy() %>% kable(digits = 3)
+mod15a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-t3-int-diag}
+par(mfrow = c(2, 2))
+mod15a %>% plot()
+```
+
+### T
+
+```{r lm-bigT}
+mod16 <- lm(nips$T ~ SUS + EtOH, data = nips)
+mod16 %>% summary()
+mod16 %>% anova()
+mod16 %>% tidy() %>% kable(digits = 3)
+mod16 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-bigT-diag}
+par(mfrow = c(2, 2))
+mod16 %>% plot()
+```
+
+#### T — 交互作用モデル
+
+```{r lm-bigT-int}
+mod16a <- lm(nips$T ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod16a %>% summary()
+mod16a %>% anova()
+mod16a %>% tidy() %>% kable(digits = 3)
+mod16a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-bigT-int-diag}
+par(mfrow = c(2, 2))
+mod16a %>% plot()
+```
+
+### 残留応力 (RS)
+
+```{r lm-rs}
+mod17 <- lm(nips$RS ~ SUS + EtOH, data = nips)
+mod17 %>% summary()
+mod17 %>% anova()
+mod17 %>% tidy() %>% kable(digits = 3)
+mod17 %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-rs-diag}
+par(mfrow = c(2, 2))
+mod17 %>% plot()
+```
+
+#### 残留応力 (RS) — 交互作用モデル
+
+```{r lm-rs-int}
+mod17a <- lm(nips$RS ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod17a %>% summary()
+mod17a %>% anova()
+mod17a %>% tidy() %>% kable(digits = 3)
+mod17a %>% anova %>% kable(digits = 3)
+```
+
+```{r lm-rs-int-diag}
+par(mfrow = c(2, 2))
+mod17a %>% plot()
+```
+
+### 因子効果のまとめ
+
+上に示した個別の ANOVA 表を、ここでは 1 つの一覧表に集約する。すなわち、すべての応答変数にわたって、加法モデルにおける両因子の *P* 値とモデルの適合度を並べたものである。
+
+```{r factor-effect-summary}
+resp_models <- list(
+  Diameter = mod1, Height = mod2, Volume = mod3, Density = mod4, Porosity = mod5,
+  Shrinkage = mod6, Recovery = mod7, Modulus = mod8, A0 = mod9, A1 = mod10, t1 = mod11,
+  A2 = mod12, t2 = mod13, A3 = mod14, t3 = mod15, T = mod16, RS = mod17)
+
+# Type II sums of squares (car::Anova) rather than the sequential Type I of anova():
+# the replicate counts are unequal (4-7 per cell), so the two factors are not quite
+# orthogonal and sequential tests would depend on the order of the terms — the factor
+# entered first would be credited with the shared variation. Type II tests each factor
+# adjusted for the other, which is what this side-by-side comparison needs.
+# (The individual tables above keep anova() so that they match the published analyses.)
+pmap <- t(sapply(resp_models, function(m) {
+  a <- car::Anova(m, type = 2)
+  c(a$`Pr(>F)`[1], a$`Pr(>F)`[2], summary(m)$r.squared)
+}))
+fmt_p <- function(p) ifelse(p < 1e-4, "< 0.0001", sprintf("%.4f", p))
+kable(data.frame(`SUS (*P*)` = fmt_p(pmap[, 1]), `EtOH (*P*)` = fmt_p(pmap[, 2]),
+                 `*R*²` = sprintf("%.3f", pmap[, 3]),
+                 row.names = rownames(pmap), check.names = FALSE),
+      align = "rrr")
+```
+
+::: {.interpretation}
+**解釈.**
+
+この一覧表からは、両因子の役割の大まかな分担が読み取れる。SUS は材料量の側面を支配する。すなわち、Density、Porosity、Modulus および 4 つの応力振幅 `A0`–`A3` はいずれも *P* < 0.001 で SUS に応答する — 体積あたりのポリマー量が多いほどセル壁は厚くなり、ネットワークの剛性は高くなるためである。二因子モデルはこれらの応答変数をよく説明しており (*R*² は `A0` の 0.79 から Modulus の 0.96 まで)、その大部分は SUS 単独が担っている (Modulus では懸濁液濃度だけで *R*² = 0.92)。一方、EtOH は構造形成の側面を支配する。Diameter、Volume/Shrinkage、Recovery および `RS` はいずれも *P* < 0.05 でエタノールに伴って変化する一方、検出可能な SUS の効果は示さない。形状に関連する応答変数 (Diameter、Height、Volume/Shrinkage) のうち、Height だけは主として SUS に駆動される (*P* = 0.001)。緩和の時間スケール (`t1`–`t3`、`T`) は、この一覧表の中で最も決定の度合いが弱い部類に入る (*R*² は 0.17 から 0.29)。`t3` と `T` ではエタノールが有意水準に達し (*P* ≈ 0.03)、SUS はわずかに届かない (*P* ≈ 0.08)。`t1` と `t2` ではどちらの因子も有意水準に達しておらず、緩和の時間スケールを強く支配する因子はない — なお、以前のマクスウェルフィットによる τ の値に対して行われた Polymer Journal の解析では、ここに明確に有意な SUS 効果が見いだされている。この点は、その以前のフィットと本データセットとが食い違う箇所の 1 つである。
+
+この表を読む際には 2 つの注意が必要である。第一に、ここでの SUS 列はタイプ II (他因子調整済み) の検定を用いているため、上の個別の表に印字された逐次型 (タイプ I) の値とは異なる。個別の表は公表済みの解析と一致させるためにその形のまま残している。`T` が最も明瞭な例である (ここでは 0.080、上の表では 0.051)。これに対し、EtOH 列は両者で同一である — EtOH は逐次的な当てはめの最後に投入されるため、そのタイプ I 平方和はすでに SUS について調整されているからである。この一致自体が、「逐次型」の意味を示すよい実例となっている。第二に、ここでの検定は因子全体に対する自由度 2 の包括検定 (オムニバス検定) であるのに対し、公表された表は個々の水準の対比を報告しており、包括検定が有意に達しない場合でも個々の対比は有意になり得る — Height に対するエタノールの効果は、ACS Omega の表 S2 では EtOH = 1 wt% の対比として有意である (*P* = 0.021) 一方、ここでの因子全体の検定は *P* = 0.066 を与える。これは、包括検定がその対比を、平坦な EtOH = 0.5 wt% の対比とまとめて評価するためである。同じことは Shrinkage と Volume にも当てはまり、上の因子全体の SUS 検定は *P* = 0.11 を示すが、ACS Omega の表 S4 では SUS = 0.3 wt% の対比が *P* = 0.049 に達する — したがって、この表での「検出可能な SUS 効果なし」とは *因子全体* としての効果がないという意味であり、有意な個々の対比が 1 つもないという意味ではない。どちらの解析も誤りではない。両者は異なる問いに答えており、公表された表が報告しているのは対比の方である。
+
+組み込みの恒等関係が 2 つあることにも留意されたい。Porosity は Density のアフィン変換であり、Shrinkage は Volume のアフィン変換であるから、それぞれのペアは必然的に同一の検定結果を共有する。
+
+最後に、上の交互作用モデルはさらなる精密化を加える。Modulus (*P* = 0.0002) と平衡応力 `A0` (*P* = 0.001) は有意な SUS × EtOH 交互作用を示すのに対し、Recovery、`RS`、`T` および 3 つの緩和時間は示さない。Modulus の交互作用は群平均から読み取るのが最も分かりやすい。エタノールを 0.2 から 0.5 wt% に上げると、SUS 0.24 wt% では弾性率がほぼ半減する (3.7 → 1.7 kPa) のに対し、SUS 0.4 wt% ではほとんど変化しない (10.6 → 10.5 kPa)。言い換えれば、エタノールによる弾性率の低下は一定のオフセットではない。厚いセル壁がその大部分を吸収してしまうのであり、これこそまさに、加法モデルには表現できない振る舞いである。
+:::
+
+# 応答変数間の相関
+
+選択した応答変数間の対ごとの関連を示す。各パネル図には、散布図 (対角線の下側)、密度曲線を重ねた変数のヒストグラム (対角線上)、および有意性の星印を付した相関係数 (対角線の上側) が表示される: \*\*\* p < 0.001、\*\* p < 0.01、\* p < 0.05。
+
+## Pearson
+
+Pearson の相関係数 *r* は **線形** の関連を測る指標であり、ここではより広い変数セットに対して用いる。
+
+```{r pearson-panel}
+# Variables entering the Pearson panel (selection used in the papers).
+vars_pearson <- c("Density", "Shrinkage", "Recovery", "Modulus", "A0", "t1", "t2", "t3", "T")
+
+pairs.panels(
+  nips[, vars_pearson],
+  pch = 21,
+  cex.cor = 1.2,     # size of the correlation labels
+  gap = 0.5,
+  scale = FALSE,     # do not scale label size by correlation strength
+  density = TRUE,    # add density curves to the diagonal histograms
+  ellipses = FALSE,
+  lm = FALSE,
+  smooth = FALSE,
+  main = "Pearson_Correlation_Analysis",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
+  stars = TRUE       # significance stars next to the coefficients
+)
+```
+
+::: {.interpretation}
+**解釈.**
+
+3 つのブロックが際立つ。Density、Modulus および応力関連の量は、密接に結びついた一群を形成する (Density–Modulus の r = 0.96、Modulus–`A0` の r = 0.87)。すなわち、スポンジが緻密であるほど剛性が高く、各マクスウェル要素が負担する応力も大きくなる。3 つの緩和時間は第二のブロックを形成し (`t1`–`t2` と `t2`–`t3` はいずれも r = 0.83)、第一のブロックとは弱い負の相関しか示さない (r はおよそ −0.2 から −0.5 の範囲)。すなわち、緻密で剛性の高いスポンジはやや速く緩和する傾向がある。また、`T` は `t3` と実質的に共線である (r = 1.00)。これは、T = t1 + t2 + t3 であり、かつ t3 が t1 より 2 桁大きいことによる、構成上当然の帰結である。Shrinkage と Recovery はパネルの他の変数とは弱い相関しか示さない (|r| ≤ 0.33)。これは、回復性 (レジリエンス) が剛性の副産物ではないことを示す最初の手がかりである。
+:::
+
+## Spearman
+
+Spearman の順位相関係数 ρ は順位に基づくため **単調** な (必ずしも線形とは限らない) 関係を捉えることができ、外れ値に対して頑健である。ここでは縮小した変数セットを検討する。(注: 公表された Spearman の図 — Polymer Journal の図 S6 — はサブセット `Modulus`、`RS`、`T`、`Recovery` を用いている。以下のパネルは、その解析のリポジトリ版である。)
+
+```{r spearman-panel}
+# Variables entering the Spearman panel and the exported matrices below.
+# The published figure (Polymer Journal Fig. S6) used c("Modulus", "RS", "T", "Recovery").
+vars_spearman <- c("Density", "Recovery", "Modulus", "A0", "T")
+
+pairs.panels(
+  nips[, vars_spearman],
+  method = "spearman",
+  pch = 21,
+  cex.cor = 1,
+  gap = 0.5,
+  scale = FALSE,
+  density = TRUE,
+  ellipses = FALSE,
+  lm = FALSE,
+  smooth = FALSE,
+  main = "Spearman_Correlation",
+  cex.main = 1.5,
+  font.main = 2,
+  hist.col = "#9ECAE1",
+  cex.labels = 1.6,  # diagonal variable names
+  font.labels = 2,
+  cex.axis = 1.15,
+  stars = TRUE
+)
+```
+
+```{r spearman-export}
+# Spearman correlation matrix for the same variable set...
+correlation_matrix <- cor(nips[, vars_spearman], method = "spearman")
+
+# ...and the matching matrix of p-values. cor() alone does not return p-values,
+# so this helper runs cor.test() on every variable pair and collects the results
+# into a symmetric matrix (diagonal = 0 by convention).
+cor.mtest <- function(mat, ...) {
+  mat <- as.matrix(mat)
+  n <- ncol(mat)
+  p.mat <- matrix(NA, n, n)
+  diag(p.mat) <- 0
+  for (i in 1:(n - 1)) {
+    for (j in (i + 1):n) {
+      tmp <- cor.test(mat[, i], mat[, j], method = "spearman", ...)
+      p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+    }
+  }
+  p.mat
+}
+
+p_matrix <- cor.mtest(nips[, vars_spearman])
+
+decimal_places <- 3
+rounded_correlation_matrix <- round(correlation_matrix, decimal_places)
+rounded_p_matrix <- round(p_matrix, decimal_places)
+rounded_correlation_matrix
+rounded_p_matrix
+
+# Side effect: export both matrices as CSV files next to this document
+# (used for the papers' supplementary tables).
+write.csv(rounded_correlation_matrix, "spearman_correlation_matrix.csv")
+write.csv(rounded_p_matrix, "spearman_p_matrix.csv")
+```
+
+::: {.interpretation}
+**解釈.**
+
+順位に基づいても同じ構造が現れる (Density–Modulus の ρ = 0.93、Modulus–`A0` の ρ = 0.84)。それに加えて、Pearson の見方では過小評価される関係が 1 つある。Recovery は Modulus とは無関係である (ρ = −0.09) にもかかわらず、`T` と正の相関を示す (ρ = 0.48)。緩和の遅いスポンジほど、長時間の圧縮後に高さをより多く回復するのに対し、剛性は回復性 (レジリエンス) を全くもたらさない。Polymer Journal の論文は、まさにこの対比の上に構築されている (同論文の図 S6 はサブセット Modulus、`RS`、`T`、Recovery を用いており、その中で最も強い結びつきは Recovery–`RS` の ρ = 0.82 である。なお `RS` は上に表示したパネルには含まれていない)。エクスポートされた CSV ファイルには、この行列と、対応する *P* 値が収められている。
+:::
+
+# 多変量解析
+
+応答変数は互いに関連しているため、本パートではそれらを統合的に解析する。すなわち、主成分分析により 8 つの力学変数を少数の無相関な成分に集約し、多応答回帰と多変量分散分析 (MANOVA) により複数の応答に対する因子効果を同時に検定し、さらに主成分得点そのものを因子で回帰する。
+
+## 主成分分析 (PCA)
+
+**力学・応力緩和変数** (弾性率と指数関数フィットのパラメータ) に対する主成分分析 (PCA) である。PCA は相関のある変数を少数の無相関な成分として表現し直し、どの特性が連動して変化するか、また試料が作製条件によってどのように分離するかを明らかにする。変数は `PCA()` の内部で標準化される。
+
+```{r pca-fit}
+# Variables entering the PCA (8 variables → at most 8 components).
+vars_pca <- c("Modulus", "A0", "A1", "t1", "A2", "t2", "A3", "t3")
+res.pca <- PCA(nips[, vars_pca], graph = FALSE, ncp = 8)
+
+# Eigenvalues: variance explained by each component.
+eig <- as.data.frame(res.pca[["eig"]])
+eig
+
+# Variable coordinates (loadings) on the components.
+coord <- as.data.frame(res.pca[["var"]][["coord"]])
+coord
+
+# Contribution (%) of each variable to each component.
+contrib <- as.data.frame(res.pca[["var"]][["contrib"]])
+contrib
+
+# Squared cosines: quality of representation of each variable on each component.
+cos2 <- as.data.frame(res.pca[["var"]][["cos2"]])
+cos2
+
+# Individual (sample) coordinates, i.e. the PC scores — reused later for
+# regression on principal components.
+coord_ind <- as.data.frame(res.pca[["ind"]][["coord"]])
+coord_ind
+```
+
+::: {.interpretation}
+**解釈.**
+
+力学変数は高度に冗長である。第 1 主成分だけで合計分散の 65.8% を、最初の 2 成分で 89.2% を説明しており、8 つの測定量が実質的に担う独立な情報は約 2 つ分にすぎない。ほぼゼロの最後の成分 (0.1% 未満) は同じ冗長性の裏返しであり、その一部は解析によって発見されたものではなく、はじめから構造的に組み込まれたものである — 後述の PC7/PC8 の診断を参照。変数座標は 2 つの大きな成分が何を意味するかを示す。5 つの応力量はすべて Dim.1 上で同じ向きを指し (Modulus 0.94、`A1` 0.96、`A2` 0.93、`A3` 0.92、`A0` 0.75)、緩和時間は Dim.1 の負方向の成分と Dim.2 の大部分 (0.61–0.75) とに分かれる — 要するに、「どれだけ強いか」の軸と「どれだけ遅いか」の軸である。
+:::
+
+### スクリープロットと変数マップ
+
+スクリープロットは各成分が説明する分散の大きさを示す — 「エルボー (肘)」より前の成分が構造の大半を要約する。変数相関プロット (主成分負荷量マップ) は各変数を PC1・PC2 との相関によって配置したもので、同じ向きを指す変数は正の相関を持ち、色は表現の質 (cos²) を表す。寄与率の棒グラフは、最初の 3 成分のそれぞれを定義づける変数を特定する (破線は、すべての変数が等しく寄与した場合に期待される寄与率を示す)。
+
+```{r pca-plot-objects}
+# Build the PCA summary plots; they are arranged into panels in the next two chunks.
+a1 <- fviz_eig(res.pca, addlabels = TRUE, barfill = col_bar, barcolor = col_bar, ylim = c(1, 90),
+               title = "Scree plot", ylab = "Explained variances (%)") +
+  theme_pub + theme(aspect.ratio = 1.7)
+
+b1 <- fviz_pca_var(res.pca,
+                   title = "Variables \ncorrelation plot",
+                   col.var = "cos2",
+                   gradient.cols = c("#C6DBEF", "#2171B5", "#08306B"),
+                   repel = TRUE,
+                   arr.width = 25,) +
+  theme_pub + theme(aspect.ratio = 1)
+
+# Shared theme for the three per-dimension contribution charts.
+theme_contrib <- theme_pub + theme(aspect.ratio = 1.8)
+c1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 1, title = "Contribution \nDim1") + theme_contrib
+d1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 2, title = "Contribution \nDim2") + theme_contrib
+e1 <- fviz_contrib(res.pca, choice = "var", fill = col_bar, color = col_bar, axes = 3, title = "Contribution \nDim3") + theme_contrib
+```
+
+```{r pca-scree-loadings}
+plot_grid(a1, b1, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15,
+          rel_widths = c(1, 1), rel_heights = c(1, 1))
+```
+
+```{r pca-contributions}
+plot_grid(c1, d1, e1, ncol = 3, nrow = 1, labels = c("A", "B", "C"), label_size = 15,
+          rel_widths = c(1, 1), rel_heights = c(1, 1))
+```
+
+::: {.interpretation}
+**解釈.**
+
+スクリープロットのエルボーが第 2 成分の直後にあることは、2 次元で十分であることを裏付ける。寄与率の棒グラフは各軸の意味を明確にする。Dim.1 は 5 つの応力量からほぼ均等に構成され (各 11–18% 程度)、Dim.2 は 3 つの緩和時間が支配し (`t2` 30%、`t1` 26%、`t3` 20%)、Dim.3 は — 6.8% とすでに小さいが — 実質的に平衡応力 `A0` (49%) であり、これは他の量から独立な情報をいくらか担う唯一の応力パラメータである。
+:::
+
+### バイプロット
+
+各バイプロットは、試料 (成分上の得点として配置した点) に変数の負荷量 (矢印) を重ねて表示する。互いに近い点は力学的プロファイルが類似した試料であり、ある矢印の方向に位置する試料はその変数の値が高い。同じプロットを、`SUS` で色分けしたもの (パネル A) と `EtOH` で色分けしたもの (パネル B) の 2 通り描き、群ごとに 95% 確率楕円を付して、どちらの因子が分離を駆動しているかを示す。(これらは *データ* 楕円 — 正規モデルの下で各群の試料の約 95% を含むと期待される領域 — であって、群平均に対する信頼領域ではない。信頼領域であればはるかに小さくなる。したがって、データ楕円が重なっていても、平均が明確に分離していることと矛盾しない。)
+
+```{r pca-theme-defs}
+# Shared themes for the biplot figures below (values identical across panels).
+theme_biplot     <- theme_pub + theme(aspect.ratio = .6, legend.position = "bottom")
+theme_biplot_lab <- theme_pub + theme(aspect.ratio = .65)
+```
+
+#### バイプロット: PC1 と PC2
+
+```{r pca-biplot-12}
+a2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,          # colour samples by suspension concentration
+  col.ind = "black",
+  addEllipses = TRUE,          # 95% concentration ellipse per group
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b2 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,         # same plot, coloured by ethanol concentration
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a2, b2, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+::: {.interpretation}
+**解釈.**
+
+試料は懸濁液濃度に従って Dim.1 に沿って並び (パネル A)、0.24 wt% 群が低応力側、0.4 wt% 群が高応力側に位置する。一方、EtOH の各群 (パネル B) は大きく重なり合う。この重なりは方向ではなく効果の大きさの問題である。どちらの因子も試料を同じ Dim.1 軸に沿って移動させるが、SUS の群平均が得点にして約 4.8 単位の幅を持つのに対し、EtOH では約 1.8 にとどまるため、エタノールの楕円は分離せず互いに内包し合う。どちらの因子も Dim.2 方向には試料をほとんど動かさない。後述の主成分得点の回帰が、この点を数値として示す。
+:::
+
+#### バイプロット: PC1 と PC3
+
+```{r pca-biplot-13}
+a3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b3 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a3, b3, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+#### バイプロット: PC2 と PC3
+
+```{r pca-biplot-23}
+a4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_sus + scale_sus_line
+
+b4 <- fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(2, 3),
+  geom.ind = "point",
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = TRUE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH\n (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot + scale_etoh + scale_etoh_line
+
+plot_grid(a4, b4, ncol = 2, nrow = 1, labels = c("A", "B"), label_size = 15)
+```
+
+#### バイプロット: PC1 と PC2 (試料ラベル付き)
+
+上と同じ射影であるが、各点に試料 ID (読み込み時に行名として保持した `ID` 列) をラベルとして付している — 個々の試料や外れ値の特定に有用である。
+
+```{r pca-biplot-12-labels-sus}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),   # points plus sample-ID labels
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_sus
+```
+
+```{r pca-biplot-12-labels-etoh}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(1, 2),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$EtOH,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "EtOH (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_etoh
+```
+
+#### バイプロット: PC7 と PC8
+
+**最後** の 2 成分の診断的表示である。これらの成分はほとんど分散を担わない。ほぼゼロの成分は変数間のほぼ厳密な線形従属に対応するため、このプロットは主として変数セットの冗長性・共線性の点検として機能する。ここでは具体的な事実が見つかる。最終成分は Modulus と応力振幅に支配されており、実際、Modulus は `A0` + `A1` + `A2` + `A3` のほぼ一定倍となっている (r = 0.996)。これは各量の定義から予想されることであり — 平衡応力と各要素の応力を合わせたものが、緩和開始時に担われる全応力 σ(0) = σ~e~ + σ~1~ + σ~2~ + σ~3~ を構成する — PCA が報告する冗長性の一部が、スポンジに関する経験的知見ではなく構造的なものであることを意味する。
+
+```{r pca-biplot-78}
+fviz_pca_biplot(
+  title = "PCA biplot",
+  res.pca,
+  axes = c(7, 8),
+  geom.ind = c("point", "text"),
+  pointshape = 21,
+  pointsize = 4,
+  fill.ind = nips$SUS,
+  col.ind = "black",
+  addEllipses = FALSE,
+  col.var = "black",
+  arr.width = 25,
+  legend.title = list(fill = "SUS (wt%)"),
+  mean.point = FALSE,
+  repel = TRUE,
+  ) +
+  guides(fill = guide_legend(order = 1), color = "none") +
+  theme_biplot_lab + scale_sus
+```
+
+## 多応答 (多変量) 回帰と ANOVA
+
+ここでは、`lm(cbind(...) ~ ...)` を用いて、複数の応答変数を同一の説明変数に対して **同時に** 当てはめる。係数は応答ごとに個別に当てはめたモデルの係数と一致するが、多応答フィットに対する `anova()` は、応答間の相関を考慮した多変量 (MANOVA 型) の検定を行う。
+
+### 4 つの応答の同時解析: 加法モデル
+
+モデル: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS + EtOH)`
+
+```{r mlm-additive}
+mod2.1 <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH, data = nips)
+mod2.1 %>% summary()
+mod2.1 %>% anova()
+# tidy() labels each row with the response as written in the cbind() call
+# ("nips$Modulus"); the "$" pair would be read as math delimiters in the knitted
+# table, so the data-frame prefix is stripped for display only.
+mod2.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod2.1 %>% anova %>% kable(digits = 3)
+```
+
+### 4 つの応答の同時解析: 交互作用モデル
+
+モデル: `lm(cbind(Modulus, A0, T, Recovery) ~ SUS * EtOH)`
+
+```{r mlm-interaction}
+mod2.1a <- lm(cbind(nips$Modulus, nips$A0, nips$T, nips$Recovery) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod2.1a %>% summary()
+mod2.1a %>% anova()
+mod2.1a %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod2.1a %>% anova %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**解釈.**
+
+係数の推定値は、応答ごとに個別に当てはめた場合と同一である — 応答を同時に当てはめても最小二乗法の結果は変わらない — が、`anova()` の表はいまや、各因子の効果を 4 つの応答すべてに対して、それらの相関を考慮しつつ *一度に* 検定する。同時検定では両因子とも明確に有意である (加法モデル: SUS は Pillai ≈ 1.00、*P* ≈ 10⁻⁷、EtOH は Pillai ≈ 0.79、*P* ≈ 3 × 10⁻⁵)。多変量の定式化の価値は、都合のよい結果だけを拾うこと (チェリーピッキング) への防御にある。すなわち、因子ごとに 4 本の個別検定ではなく 1 本の包括検定で済む点である。
+:::
+
+## 主成分得点に対する回帰と ANOVA
+
+各変数を個別にモデル化する代わりに、上位の主成分得点を *合成* 応答として用いる。Dim.1 と Dim.2 は 8 つの力学変数すべての同時変動を要約しているため、得点に対する因子の効果は、力学的プロファイル全体への効果を示すことになる。
+
+### 2 つの主成分得点の同時解析: 交互作用モデル
+
+モデル: `lm(cbind(Dim.1, Dim.2) ~ SUS * EtOH)`
+
+```{r pca-scores-mlm}
+# Sample scores on the principal components, from the PCA fitted above.
+score <- data.frame(res.pca$ind$coord)
+
+mod3.1 <- lm(cbind(score$Dim.1, score$Dim.2) ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.1 %>% summary()
+mod3.1 %>% anova()
+mod3.1 %>% tidy() %>% mutate(response = sub("^[^$]*\\$", "", response)) %>% kable(digits = 3)
+mod3.1 %>% anova %>% kable(digits = 3)
+```
+
+### 剛性の軸 (Dim.1): 加法モデル
+
+モデル: `lm(Dim.1 ~ SUS + EtOH)`
+
+```{r pca-scores-dim1}
+mod3.2 <- lm(score$Dim.1 ~ SUS + EtOH, data = nips)
+mod3.2 %>% summary()
+mod3.2 %>% anova()
+mod3.2 %>% tidy() %>% kable(digits = 3)
+mod3.2 %>% anova %>% kable(digits = 3)
+```
+
+```{r pca-scores-dim1-diag}
+par(mfrow = c(2, 2))
+mod3.2 %>% plot()
+```
+
+### 緩和時間の軸 (Dim.2): 加法モデル
+
+モデル: `lm(Dim.2 ~ SUS + EtOH)`
+
+上の Dim.1 と比較するため、同じ加法モデルを第 2 主成分に適用したものである。
+
+```{r pca-scores-dim2}
+mod3.2b <- lm(score$Dim.2 ~ SUS + EtOH, data = nips)
+mod3.2b %>% summary()
+mod3.2b %>% anova()
+mod3.2b %>% tidy() %>% kable(digits = 3)
+mod3.2b %>% anova %>% kable(digits = 3)
+```
+
+### 剛性の軸 (Dim.1): 交互作用モデル
+
+モデル: `lm(Dim.1 ~ SUS * EtOH)`
+
+```{r pca-scores-dim1-int}
+mod3.3 <- lm(score$Dim.1 ~ SUS + EtOH + SUS*EtOH, data = nips)
+mod3.3 %>% summary()
+mod3.3 %>% anova()
+mod3.3 %>% tidy() %>% kable(digits = 3)
+mod3.3 %>% anova %>% kable(digits = 3)
+```
+
+```{r pca-scores-dim1-int-diag}
+par(mfrow = c(2, 2))
+mod3.3 %>% plot()
+```
+
+::: {.interpretation}
+**解釈.**
+
+主成分得点を応答として扱うことで、8 本の ANOVA が 2 本に圧縮される。Dim.1 — 全体的な応力水準 — は作製因子によって強く決定されている (*R*² = 0.86)。懸濁液濃度が支配的な項であり (*P* < 0.001)、エタノールはそれに次ぐ明確な二次的因子として (*P* < 0.001)、より小さい効果で同じ軸に作用する。Dim.2 — 緩和時間の軸 — を操作するのははるかに難しい。SUS の効果は弱く (*P* = 0.036)、エタノールの効果は検出できない (*P* = 0.407)。したがって、両因子はスポンジを剛性の軸に沿って大きく動かす一方、時間スケールの軸に沿ってはわずかにしか動かさない。しかも 2 つのレバーはきれいに分離しておらず、いずれも主として同じ第 1 主成分に作用するのである。
+:::
+
+## MANOVA
+
+多変量分散分析 (MANOVA) は、8 つの力学変数 (`Modulus`、`A0`、`A1`、`t1`、`A2`、`t2`、`A3`、`t3`) の平均ベクトルが因子水準間で異なるかどうかを検定する — 8 本の個別の ANOVA の代わりに 1 本の同時検定を行うのである。標準的な検定統計量として **Pillai のトレース** (仮定の破れに対して最も頑健)、**Wilks のラムダ** (古典的な尤度比基準)、**Hotelling–Lawley のトレース**、および **Roy の最大根** (群間差が単一の次元に沿っている場合に最も検出力が高いが、最もリベラルで有意になりやすい) の 4 種類が報告される。4 つすべてが一致すれば結論は強固になる。続く `summary.aov()` の出力は、この同時検定の結果を応答ごとの単変量フォローアップ ANOVA に分解して示す。
+
+### SUS
+
+`manova(cbind(Modulus, A0, A1, t1, A2, t2, A3, t3) ~ SUS)` — SUS 効果の同時検定:
+
+```{r manova-sus}
+mod4.1 <- manova(cbind(nips$Modulus, nips$A0, nips$A1, nips$t1, nips$A2, nips$t2, nips$A3, nips$t3) ~ SUS, data = nips)
+mod4.1 %>% summary.manova(intercept = TRUE, "Pillai")
+mod4.1 %>% summary.manova(intercept = TRUE, "Wilks")
+mod4.1 %>% summary.manova(intercept = TRUE, "Hotelling-Lawley")
+mod4.1 %>% summary.manova(intercept = TRUE, "Roy")
+```
+
+単変量のフォローアップ ANOVA (応答ごとに 1 本):
+
+```{r manova-sus-aov}
+mod4.1 %>% summary.aov()
+mod4.1 %>% tidy() %>% kable(digits = 3)
+```
+
+### EtOH
+
+`manova(cbind(Modulus, A0, A1, t1, A2, t2, A3, t3) ~ EtOH)` — EtOH 効果の同時検定:
+
+```{r manova-etoh}
+mod5.1 <- manova(cbind(nips$Modulus, nips$A0, nips$A1, nips$t1, nips$A2, nips$t2, nips$A3, nips$t3) ~ EtOH, data = nips)
+mod5.1 %>% summary.manova(intercept = TRUE, "Pillai")
+mod5.1 %>% summary.manova(intercept = TRUE, "Wilks")
+mod5.1 %>% summary.manova(intercept = TRUE, "Hotelling-Lawley")
+mod5.1 %>% summary.manova(intercept = TRUE, "Roy")
+```
+
+単変量のフォローアップ ANOVA (応答ごとに 1 本):
+
+```{r manova-etoh-aov}
+mod5.1 %>% summary.aov()
+mod5.1 %>% tidy() %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**解釈.**
+
+両因子とも、8 つの力学変数の同時平均ベクトルを有意に変化させる。SUS は Pillai = 1.14 (*P* ≈ 10⁻⁶)、EtOH は Pillai = 0.68 (*P* = 0.027) である。どちらの因子でも 4 つの検定統計量すべてが同じ結論に至っており、これこそが 4 種類を併記する目的である頑健性の確認にほかならない。効果の強さの対比は、ここまでのすべての結果と符合する — 懸濁液濃度が力学特性の主要なレバーであり、エタノールが二次的なレバーである — そして単変量のフォローアップは、各同時効果をどの個々の変数が担っているかを特定する。これら 2 つの検定の組み立てには注意点が 1 つある。いずれも独立した一元配置 MANOVA であるため、どちらの因子も他方について調整されていない。したがって、大きな SUS 効果は EtOH モデルの残差変動の中に残り続け、エタノールの検定は保守的になる。上の二因子多応答モデルはこの点を部分的にしか改善しない — 多変量フィットに対する `anova()` もまた逐次型であり、そこでは EtOH は SUS について調整されるが、SUS は EtOH について調整されないのである。ここではどちらの経路でも同じ結論に達するが、順序に依存しない完全な多変量検定が必要な場合には `car::Anova(mod2.1, type = 2)` を用いるのがよい。
+:::
+
+## ASCA: 多変量変動の分割
+
+ANOVA 同時成分分析 (ASCA) は、このパートの 2 つの流れをひとつに結びつける。MANOVA と同様に、多変量変動のうちどれだけを各計画項が担っているかを問い、PCA と同様に、続いて各項の取り分の *内側* を成分分解によって調べる。自動スケーリング (標準化) したデータ行列は、水準平均から構成される加法的な効果行列 — SUS のもの、EtOH のもの、交互作用のもの — と残差行列とに分割される。各効果行列には平方和 (全変動に占める取り分) とそれ自身の PCA が与えられる。有意性は並べ替え検定 (permutation test) で評価する。すなわち、条件ラベルをスポンジ間で並べ替え (まとめて並べ替えるため、セルのサイズは保たれる)、観測された平方和を並べ替え分布と比較するのである。実装はパッケージから読み込むのではなく、以下にすべて書き下してあるので、どのステップも追跡し改変することができる。
+
+```{r asca-analysis}
+set.seed(1234)
+X <- scale(as.matrix(nips[, vars_pca]))   # autoscaled mechanical variables (40 x 8)
+
+# Effect matrices from level means (the grand mean is 0 after autoscaling).
+asca_decomp <- function(a, b) {
+  Ma <- apply(X, 2, ave, a)
+  Mb <- apply(X, 2, ave, b)
+  Mi <- apply(X, 2, ave, interaction(a, b)) - Ma - Mb
+  list(Ma = Ma, Mb = Mb, Mi = Mi,
+       ssq = c(`SUS` = sum(Ma^2), `EtOH` = sum(Mb^2), `SUS x EtOH` = sum(Mi^2)))
+}
+obs <- asca_decomp(nips$SUS, nips$EtOH)
+resid_ssq <- sum((X - obs$Ma - obs$Mb - obs$Mi)^2)
+
+# Permutation test: reshuffle which sponge received which condition (the SUS/EtOH
+# label pairs are permuted jointly, so the design's cell sizes are preserved).
+n_perm <- 2000
+perm <- replicate(n_perm, {
+  i <- sample(nrow(X))
+  asca_decomp(nips$SUS[i], nips$EtOH[i])$ssq
+})
+p_perm <- (rowSums(perm >= obs$ssq) + 1) / (n_perm + 1)
+
+kable(data.frame(
+  Effect = c(names(obs$ssq), "Residual"),
+  `Sum of squares` = round(c(obs$ssq, resid_ssq), 1),
+  `Share of total (%)` = round(100 * c(obs$ssq, resid_ssq) / sum(X^2), 1),
+  `Permutation *P*` = c(ifelse(p_perm < 0.001, "< 0.001", sprintf("%.3f", p_perm)), ""),
+  check.names = FALSE), row.names = FALSE)
+```
+
+```{r asca-effect-pca}
+# PCA of each main-effect matrix: with three levels an effect matrix has rank two,
+# and its first component tells us what kind of mechanical change the factor produces.
+effect_pc1 <- function(M) {
+  sv <- svd(M)
+  list(share = sv$d[1]^2 / sum(sv$d^2), loading = setNames(sv$v[, 1], colnames(X)))
+}
+pc_sus <- effect_pc1(obs$Ma); pc_etoh <- effect_pc1(obs$Mb)
+cat(sprintf("SUS-effect PC1 carries %.1f%% of the SUS effect; loadings:\n", 100 * pc_sus$share))
+round(pc_sus$loading, 2)
+cat(sprintf("EtOH-effect PC1 carries %.1f%% of the EtOH effect; loadings:\n", 100 * pc_etoh$share))
+round(pc_etoh$loading, 2)
+```
+
+::: {.interpretation}
+**解釈.**
+
+この分解は、このパート全体が示してきたことを 1 つの数値にまとめる。懸濁液濃度は 8 つの力学変数の全変動の半分強を占め (≈ 56%、並べ替え検定の *P* < 0.001)、一方エタノールの取り分 (≈ 10%) は交互作用 (≈ 8%) と同程度であり、いずれも残差 (≈ 29%) に比べればはるかに小さい。注目すべきは、MANOVA では有意とされたにもかかわらず、エタノールがこの並べ替え検定を *通らない* (*P* ≈ 0.09) ことである。これは矛盾ではなく、問うている内容の違いである。ASCA の検定は、エタノールが占める生の変動の取り分が偶然を上回るかどうかを問うのに対し、MANOVA は効果を残差共分散に照らして評価する — 大きな競合効果 (ここでは SUS) が全変動を膨らませている場合には、後者の方が鋭い道具となる。集計上の注意を 1 つ挙げると、繰り返し数が等しくないため効果行列は厳密には直交せず、取り分の合計は 100% をわずかに (約 2% ほど) 超える — これは、先にタイプ II 検定を用いる動機となったのと同じ不釣合いである。
+
+続いて効果ごとの PCA は、各因子の作用を本質的にただ 1 つの方向へと圧縮する — PC1 はどちらの効果行列でも 97–98% を担っており、これは 3 つの水準平均が 8 次元の応答空間内でほぼ一直線上に並ぶことを意味する。SUS の方向は 5 つの応力量すべてに同じ向きの負荷を与え、緩和時間には弱い逆向きの負荷を持つ。すなわち、懸濁液濃度を上げるとすべての応力パラメータが上昇し、時間スケールはわずかに短くなる — 全体 PCA の Dim.1 の筋書きを、実験計画の効果として言い直したものである。エタノールの方向はより特徴的である。応力振幅と緩和時間とを *逆* 符号で対にしているため、エタノールを 0.2 から 1 wt% へ動かすと、スポンジは単一の潜在軸に沿って、応力振幅がより低く *かつ* 緩和時間がより長い方向へと滑っていく。これこそが、単変量モデルでは一度に 1 つの応答についてしか記述できなかったエタノールの「柔らかくなるが遅くなる」という特徴を、応答空間内の 1 つの方向として捉えたものである。
+:::
+
+# 応答曲面解析 (連続量としての因子)
+
+ここまでの解析ではいずれも、`SUS` と `EtOH` をカテゴリカルな実験水準として扱ってきた。本パートではこれらを **連続** 変数として扱い、応答曲面法 (RSM) により、数値データのコピー `dat` を用いて、`Shrinkage` (および最後には `Density`) を両因子の滑らかな関数としてモデル化する。この見方は、試験した水準の間の内挿を可能にし、応答が最も速く減少する方向を教えてくれる。
+
+以下に示す Shrinkage の一次モデルは、ACS Omega 論文で公表された解析である。その係数は同論文の表 2 として、その分散分析 (あてはまりの悪さ (lack of fit; LOF) の検定を含む) は表 S6 として、その等高線図は図 6j として掲載されている。RSM による予測は、EtOH = 3 wt% で追加作製した 3 個のスポンジ (SUS 水準ごとに 1 個。ACS Omega の SI 表 S1 の 43–45 行目。ここでは `NIPS_validation.csv` として提供する) によって検証された。これら 3 個のスポンジの体積収縮率は、平面モデルの予測値 46–48% に対して実測値 49–56% であり、SUS 0.4 wt% で最も近かった (予測 46.4% に対し実測 49.4%)。この比較は、後述の「どちらのモデルが外挿に耐えるか」の節で本格的に検討する。二次モデルと正準分析は、公表済みの解析を超える探索的な拡張である。後述の外挿試験は、実験領域の外で信頼すべきモデルが曲面ではなく平面である理由を示す。
+
+## 一次 (FO) モデル
+
+`FO(SUS, EtOH)` は一次の応答曲面、すなわち 2 因子の上に張られた平面を当てはめる。`summary()` には LOF 検定が含まれ、この単純な平面で十分か、それとも曲率 (二次モデル) が必要かを示してくれる。この検定は繰り返しを利用する。同一条件で作製したスポンジはその条件自身の平均のまわりにばらつき、モデルに依存しないノイズの推定値である *純誤差* (pure error) を与える。一方、9 個の条件平均は当てはめた平面のまわりにばらつく (これが *あてはまりの悪さ* (lack of fit) である)。後者のばらつきが前者を明らかに上回るときに限り、平面の妥当性が疑問視される。説明変数は元の単位のまま (コード化せずに) 投入されるため、係数は濃度スケール上で直接解釈できる。係数表は ACS Omega の表 2 に一致し、summary 出力の分散分析ブロックは表 S6 に一致する (モデルの *P* = 0.011、LOF は有意ではなく *P* = 0.260)。
+
+```{r rsm-fo-fit}
+rsm1 <- rsm(Shrinkage ~ FO(SUS, EtOH), data = dat)
+summary(rsm1)
+rsm1 %>% tidy() %>% kable(digits = 3)
+```
+
+::: {.interpretation}
+**解釈.**
+
+当てはめた平面上では、収縮率はエタノール 1 wt% あたり約 3.8 パーセントポイント低下する (*P* = 0.005)。一方、SUS の傾き (1 wt% あたり −8.9、すなわち 0.24–0.4 wt% という狭い範囲の全体でも約 −1.4 ポイントに過ぎない) は、統計的にゼロと区別できない (*P* = 0.176)。分散分析ブロックは係数と同じくらい情報に富む。モデルは有意である (*P* = 0.011) 一方、LOF 検定は有意ではない (*P* = 0.260)。すなわち、実験領域の内側の繰り返しデータは、平面に *反する* 証拠を与えていない。これは妥当性の証明ではなく、棄却できなかったと読むべきである。自由度 6 と 31 のこの検定の検出力は限られており、しかもモデルは収縮率の分散の約 22% しか説明しない (決定係数 *R*² = 0.216) ため、試料間変動のかなりの部分が説明されないまま残っている。またこの検定は、試験範囲の外側での挙動については何も語らない。EtOH = 3 wt% のスポンジは正真正銘の外挿であり、それらとこの平面との一致の程度は、本パートの後段で独立に評価する。3 個のうち 1 個は近い値に収まるが、残りの 2 個は 7.5–8.5 ポイントずれている。
+:::
+
+### 当てはめた平面の等高線図
+
+予測された Shrinkage の塗りつぶし等高線図である。赤い長方形は、本研究が実際にカバーした実験領域 (design region) を示す。その外側の予測は外挿であり、慎重に読む必要がある。
+
+```{r rsm-fo-contour}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm1, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+```
+
+## 二次 (SO) モデルと正準分析
+
+`SO(SUS, EtOH)` は二次項と交互作用項を追加し、曲がった曲面を許容する。続く正準分析は、その曲面の停留点を特定し、二次形式の固有値を報告する。固有値がすべて負なら最大、すべて正なら最小、符号が混在していれば鞍点である。`threshold = 0` を指定すると、固有値は推定されたままの値に保たれる (ゼロに近い値の閾値処理は行われない)。
+
+```{r rsm-so-fit}
+rsm2 <- rsm(Shrinkage ~ SO(SUS, EtOH), data = dat)
+canonical(rsm2, threshold = 0)
+```
+
+固有値はスケールに依存する。固有値は曲面の 2 階微分であり、説明変数の単位の 2 乗あたりの応答という単位を持つ。したがって、生の wt% スケール上では 2 つの固有値は比較できない。SUS の変動範囲は EtOH の 5 分の 1 しかなく、これが SUS の見かけの曲率を約 25 倍に膨らませる。実験範囲が −1 から +1 になるように各因子をスケーリングした **コード化** 因子で再当てはめを行えば、このアーティファクトは除去される。これが正準分析を読む際の標準的な方法である。
+
+```{r rsm-so-coded}
+# Code both factors to [-1, +1] over their design ranges: SUS 0.24-0.4, EtOH 0.2-1 wt%.
+dat_coded <- coded.data(dat, x1 ~ (SUS - 0.32)/0.08, x2 ~ (EtOH - 0.6)/0.4)
+rsm2c <- rsm(Shrinkage ~ SO(x1, x2), data = dat_coded)
+summary(rsm2c)
+canonical(rsm2c, threshold = 0)
+```
+
+::: {.interpretation}
+**解釈.**
+
+2 つの固有値はともに正であり、当てはめた二次曲面は停留点で最小値をとる。停留点はおよそ SUS 0.35 wt%、EtOH 0.90 wt% に位置する。すなわち、実験領域を超えた先の最適点ではなく、実験領域の内部にある。コード化前の固有値 (≈ 247 と ≈ 8) は極端に不揃いに見えるが、その比率はほぼすべて、先ほど述べた単位の不一致によるものである。コード化した因子では ≈ 1.7 と ≈ 1.2 になる。ここから一般に有用な教訓が得られる。コード化していない説明変数から計算した正準固有値の大きさを比較してはならない。より狭い範囲で変化させた因子が、常に支配的であるかのように見えてしまうからである。
+
+より大きな注意点は、これらのいずれもが統計的には決着していないことである。コード化したモデルの summary からは、二次項と交互作用項のいずれも有意でないことが分かる (`x1^2` の *P* = 0.12、`x2^2` の *P* = 0.21、`x1:x2` の *P* = 0.49)。したがって、ここで記述された形状 — 固有値の符号、すなわち曲面が椀型か鞍型か、そして停留点がどこにあるか — は、データがゼロと区別できない係数の上に成り立っている。因子あたり 3 水準しかない本計画では、完全な二次モデルは実験計画が支えうる限界に位置しており、一次モデルの LOF 検定も二次項そのものも、追加の曲率が必要であったという証拠を与えない。ここでの正準分析は、これらのスポンジについての知見としてではなく、手法の例示として読むべきである。これを文字どおりに受け取ると何が起きるかは、以下の比較が示す。
+:::
+
+### 正準経路付きの等高線図
+
+青い丸は、`canonical.path()` が返す正準経路を描いたものであり、停留点 (距離 0 に置かれた別種の記号) から曲率が *最も小さい* 軸に沿って外側へと進んでいく。関数は `descent = TRUE` で呼び出されているが、この曲面上では実際には何も降下しない。2 つの固有値がともに正であるため停留点は最小点であり、予測収縮率は停留点から離れるどの方向へも上昇する。この経路に沿っては緩やかに、それ以外では急峻に上昇する。塗りつぶした青い四角は検証条件 SUS = 0.4 wt%、EtOH = 3 wt% を示す。この条件での実測収縮率は 49.4% であり、当てはめた曲面から大きく外れている点に注意されたい。それこそが後段で述べる論点である。赤い長方形は先と同じく実験領域である。
+
+```{r rsm-so-contour-path}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(30, 80), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(EtOH ~ SUS, data = canonical.path(rsm2, descent = TRUE, threshold = 0),
+       col = "#08306B", pch = 1 + 6*(dist == 0))   # pch 7 marks the stationary point (dist == 0)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
+```
+
+### 停留点を中心とした等高線図
+
+同じ二次曲面を、停留点を通る断面 (`at = summary(rsm2)$canonical$xs`) と、より広い EtOH の範囲で描き直したものである。
+
+```{r rsm-so-contour-stationary}
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(rsm2, EtOH ~ SUS, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), at = summary(rsm2)$canonical$xs,
+        bounds = list(EtOH = c(0.1, 5), SUS = c(0, 0.5)), zlim = c(40, 100), decode = FALSE)
+```
+
+### どちらのモデルが外挿に耐えるか — 検証用スポンジによる試験
+
+EtOH = 3 wt% の 3 個のスポンジは、実験領域をはるかに超えた条件で作製された。このため、競合する 2 つの曲面に対する真の標本外検証となる。
+
+```{r rsm-validation-check}
+val <- read.csv("NIPS_validation.csv", header = TRUE, row.names = 1)
+
+comparison <- data.frame(
+  SUS = val$SUS, EtOH = val$EtOH,
+  `Measured (%)` = round(val$Shrinkage, 1),
+  `First order (%)` = round(predict(rsm1, val[, c("SUS", "EtOH")]), 1),
+  `Second order (%)` = round(predict(rsm2, val[, c("SUS", "EtOH")]), 1),
+  check.names = FALSE)
+kable(comparison, row.names = FALSE)
+```
+
+::: {.interpretation}
+**解釈.**
+
+この表は、2 つのモデルの比較として読むべきであり、どちらか一方の勝利として読むべきではない。平面モデルは、実測値 49–56% に対して 46–48% の収縮率を予測しており、その誤差は 3.0、7.5、8.5 パーセントポイントに達する。これはモデル自身の残差標準誤差 (2.74) の最大約 3 倍であり、モデルが実験格子全体にわたって予測する変化幅 4.5 ポイントそのものよりも大きい。また、傾向も部分的にしか捉えていない。EtOH 1 wt% から EtOH 3 wt% にかけて、実測収縮率は SUS 0.4 wt% で低下し (54.0 → 49.4%)、SUS 0.24 wt% でも低下した (56.9 → 56.3%) が、SUS 0.3 wt% では上昇した (53.1 → 54.8%)。これに対し平面モデルは、一様に 7.6 ポイントの低下 (1 wt% あたり −3.78 という EtOH の傾きの 2 倍) を予測する。正直に総括すれば、平面モデルは妥当な範囲にとどまり、懸濁液濃度が最も高い条件 — 論文の最適化の議論が狙いを定めていたまさにその条件 — での方向性を捉えている。
+
+対照的に、二次モデルは単に不正確であるだけでなく、定性的に誤っている。実測値が 49–56% であったところに約 88–95% の収縮率を予測するのである。その理由は偶発的なものではなく構造的なものである。実験領域の内部に最小点を持つ当てはめ二次曲面は、その外側ではあらゆる方向に上向きに湾曲せざるを得ない。したがって、エタノール濃度の高い方向 — まさに実験が探索しようとしていた方向 — へ外挿すれば、必然的に過大予測となる。これこそ、この表から汲み取るべき一般的な教訓である。多項式曲面は当てはめの対象となった領域を記述するものであり、領域内で増した柔軟性は領域外では何の価値も持たない。公表された解析は一次モデルを用いており、この比較はその理由を示している。
+:::
+
+## 実験格子点上の予測平均
+
+一次モデルによる Shrinkage の推定周辺平均 (estimated marginal means; EMM) を、本研究の 9 通りの実験条件の組合せ (SUS 0.24/0.3/0.4 wt% × EtOH 0.2/0.5/1 wt%。`mode = "decoded"` の指定により元の濃度スケールで報告される) において評価する。加法モデルでは、この推定周辺平均は当てはめた平面を格子点で評価した値にほかならない。モデルが 40 個のスポンジ全体から情報をプールするため、推定周辺平均は生のセル平均とはわずかに異なる。また、生の平均と異なり、モデルに基づく標準誤差を伴う。
+
+```{r rsm-emmeans-grid}
+# Note: emmeans reconstructs the data from the model call, so `dat` must exist in the
+# workspace — which is the case when this document is knitted normally.
+emmeans::emmeans(rsm1, ~ SUS * EtOH, mode = "decoded",
+                 at = list(SUS = c(0.24, 0.3, 0.4), EtOH = c(0.2, 0.5, 1)))
+```
+
+::: {.interpretation}
+**解釈.**
+
+推定周辺平均は、実験格子に具体的な数値を与える。予測収縮率は、両因子が最も低い条件 (SUS 0.24、EtOH 0.2) の 58.4% から (SUS 0.4、EtOH 1) の 53.9% までにわたり、変化幅は約 4.5 ポイント、標準誤差は 1 ポイント未満である。両軸に沿ったこの単調な減少こそが、実験領域を超えた EtOH = 3 wt% での検証実験 (`NIPS_validation.csv`) の動機となったものであり、その評価は上の「どちらのモデルが外挿に耐えるか」の節で行った。
+:::
+
+## 通常の lm() によるクロスチェック
+
+同じ一次曲面は、通常の `lm()` でも当てはめられる。以下の当てはめは RSM の結果を再現し、標準的な回帰診断を加える。
+
+### 一次多項式による当てはめ
+
+`poly(SUS, EtOH, degree = 1)` は `FO(SUS, EtOH)` と同じモデル空間を張るため、この等高線図は上の FO の等高線図と一致するはずである。(点 SUS = 0.4、EtOH = 3 は先と同じ検証条件である。)
+
+```{r rsm-fo-poly-check}
+fo_poly <- lm(Shrinkage ~ poly(SUS, EtOH, degree = 1), data = dat)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(fo_poly, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0.1, 4), SUS = c(0, 0.5)),
+        zlim = c(40, 62), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 1.18, "design region", col = col_accent, font = 2, cex = 1.05)
+points(0.4, 3, col = "black", pch = 22, cex = 2, bg = "#2171B5")  # validation condition (SUS 0.4, EtOH 3 wt%; measured shrinkage 49.4%)
+text(0.4, 3.45, "validation sponge", col = "black", font = 2, cex = 1.0)
+```
+
+### 収縮率 (Shrinkage) の加法線形モデルと診断
+
+数値としての因子に対する単純な加法回帰 `Shrinkage ~ SUS + EtOH`、その分散分析表、実験領域に絞り込んだ等高線図、および標準的な診断プロット (残差 vs 当てはめ値、正規 Q–Q、スケール–ロケーション、残差 vs てこ比) を示す。
+
+```{r rsm-lm-shrinkage}
+lm2 <- lm(Shrinkage ~ SUS + EtOH, data = dat)
+summary(lm2)
+anova(lm2)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm2, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)),
+        zlim = c(50, 65), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
+par(mfrow = c(2, 2))
+lm2 %>% plot()
+```
+
+### 密度 (Density) の加法線形モデル
+
+同じアプローチを、応答変数を Density に代えて適用したものである。
+
+```{r rsm-lm-density}
+lm3 <- lm(Density ~ SUS + EtOH, data = dat)
+summary(lm3)
+par(cex.axis = 1.3, cex.lab = 1.45, font.lab = 2, font.axis = 2)
+contour(lm3, ~ SUS + EtOH, image = TRUE, img.col = pal_surface, labcex = 1, xlabs = c("EtOH (wt%)", "SUS (wt%)"), bounds = list(EtOH = c(0, 1), SUS = c(0, 0.5)), decode = FALSE)
+lines(c(0.4, 0.24, 0.24, 0.4, 0.4), c(0.2, 0.2, 1, 1, 0.2), col = col_accent, lwd = 2.5)  # design region
+text(0.32, 0.55, "design region", col = col_accent, font = 2, cex = 1.05)
+```
+
+# 構造–物性スケーリング (Gibson–Ashby)
+
+見かけの弾性率は、セル構造体 (cellular solids) に対する Gibson–Ashby モデル E\*/*E*~s~ = C · (ρ/ρ~s~)^n^ に従って密度とともにスケールする。ここで、固体の酢酸セルロースの参照値として *E*~s~ = 1178 MPa および ρ~s~ = 1311 kg·m⁻³ を用いる。モデルは元のスケールでの非線形最小二乗法によって当てはめられ、これにより Polymer Journal の図 5b に報告された定数 (*C* = 2.04, *n* = 2.48) が再現される。統計的に情報を持つパラメータは指数 n の方であり、2 に近い値は連続気泡 (open-cell) 構造体における曲げ支配型の変形の古典的な特徴である。比例定数 C は、この理想化された参照と比べて、所与の相対密度においてネットワークがどれほど剛であるかを測る量であり、その値がセル構造について何を含意するかは Polymer Journal の論文で議論されている。
+
+```{r gibson-ashby}
+Erel   <- (nips$Modulus / 1000) / 1178   # kPa -> MPa, relative to solid CA (Es = 1178 MPa)
+rhorel <- nips$Density / 1311            # relative to solid CA (rho_s = 1311 kg m^-3)
+
+ga_fit <- nls(Erel ~ C * rhorel^n, start = list(C = 1, n = 2))
+summary(ga_fit)
+cov2cor(vcov(ga_fit))   # C and n are almost perfectly correlated (see the discussion)
+
+par(cex.axis = 1.25, cex.lab = 1.4, font.lab = 2, font.axis = 2, cex.main = 1.5)
+plot(rhorel, Erel, log = "xy",
+     pch = 21, cex = 1.4, bg = pal_sus[as.integer(nips$SUS)],
+     xlab = "Relative density", ylab = "Relative modulus",
+     main = "Gibson-Ashby scaling")
+curve(coef(ga_fit)[["C"]] * x^coef(ga_fit)[["n"]], add = TRUE, col = col_accent, lwd = 2)
+legend("topleft", legend = levels(nips$SUS), pt.bg = pal_sus,
+       pch = 21, title = "SUS (wt%)", bty = "n")
+```
+
+::: {.interpretation}
+**解釈.**
+
+2 つの定数は大きく異なる精度で推定されている。指数は *n* = 2.48 ± 0.15 と得られ、理想的な連続気泡の値 2 を上回るのに対し、比例定数は広い区間を伴う (*C* = 2.04 ± 1.56)。ここで C の値が *なぜ* 絞り込みにくいのかは、理解しておく価値がある。というのも、その理由はデータの欠陥ではなく幾何学的なものだからである。スポンジがカバーする相対密度はおよそ 0.004–0.007 に過ぎない一方で、C は ρ~rel~ = 1 において定義される。これは 2 桁を超える外挿である。これほど長いてこの腕の下では、切片と指数はほぼ完全に絡み合う (上に出力した相関行列は r(*C*, *n*) ≈ 0.9995 を与える)。データ窓の内側で当てはめ直線をわずかに傾けるだけで、外挿された比例定数は大きく振れ、n が 0.1 変化するごとに C はおよそ 1.7 倍変化する。しかも、この窓自体を容易に広げることはできない。はるかに広い密度範囲にわたって *同一の内部ネットワーク構成を保ったまま* スポンジを作製することこそ、化学組成を固定した氷晶テンプレート法 (cryo-templating) のプロセスが困難にしている点であり、したがって狭い密度範囲は材料系の物理的制約であって、実験の欠点ではない。
+
+同じ絡み合いが、当てはめ手法間の違いも説明する。元のスケールでの非線形最小二乗法は (*C*, *n*) = (2.04, 2.48) を与えるのに対し、log(*E*~rel~) の log(ρ~rel~) への通常の線形回帰は (7.5, 2.73) を与える。これらは互いに対立する物理的主張ではない。測定された窓の内側では 2 本の曲線はおよそ 10% 以内で一致し (窓の下端では乖離が約 12% に達する)、ρ~rel~ = 1 に向かって外挿したときに初めて乖離する。そこでは、対数スケール当てはめのわずかに急な傾きが積み重なって、切片はほぼ 4 倍大きくなる (Δ*n* = 0.25 に対しておよそ (1/0.005)^Δ*n*^ ≈ 3.7 倍。ここで 0.005 は窓の中央の相対密度である)。2 組の (*C*, *n*) は、これらのスポンジを同程度によく記述するパラメータの組合せがなす同一の細い尾根の上にある 2 つの点である。したがって、対数スケールの値 *C* = 7.5 にはそれ自体として解釈すべき構造的意味はなく、それを独立の意味として読もうとすることは、同じ情報の重み付けを変えたに過ぎないものを二重に数えることになる。
+
+では、どちらの値を報告し、解釈すべきだろうか。多孔質材料の文献では C の読み取りは経験的であり、その値は、実測されたフォームや格子構造の蓄積された知見、および理想化された単位セルモデルと比較される。この伝統は、標準的な Gibson–Ashby 形式を直接当てはめることに根ざしており、公表値 *C* = 2.04 が従っているのはこの流儀であり、先行報告との比較に適した流儀でもある。この伝統に沿って、独立に測定されたセル構造 (Polymer Journal 論文の X 線 CT 解析) と併せて読めば、点推定値は、そこに記述された理想より剛で連結性の高いネットワークと整合的である。広い統計的区間が記録しているのは、到達可能な密度窓だけでは比例定数を絞り込めないという事実であって、構造的な読み取りが誤っているということではない。この当てはめを再利用する際の実務上の指針が 2 つ導かれる。第一に、C を引用する際は必ず、対をなす n と当てはめの流儀を併記すること (尾根に沿っては、C はそれ自身の指数においてのみ意味を持つ)。第二に、手法に依存しない剛性の要約が必要な場合は、測定された窓の *内側* にある密度での当てはめ相対弾性率を引用すること。ρ~rel~ = 0.006 では両方の当てはめが *E*~rel~ ≈ 6.4 × 10⁻⁶ を与え、この値は精度よく推定されており、外挿には全く依存しない。
+:::
+
+# まとめ
+
+まとめると、これらの解析は、2 つのレバーを備えた 1 つの一貫した物語を語っている。懸濁液濃度は、氷晶テンプレートで形成されたネットワークがどれだけの材料を含むかを決める。密度、空隙率、剛性、そしてマクスウェル応力振幅はいずれも懸濁液濃度にほぼ決定論的に従い (決定係数 *R*² は最大 0.96)、Gibson–Ashby 当てはめはこれを単一のべき乗則に凝縮する。その指数 (*n* = 2.48) は、理想的な連続気泡の曲げ変形に期待される値 2 を上回る。エタノール濃度はプロセスのより早い段階、すなわち氷晶の形成に作用し、そのため形状および時間に関わる量に現れる。収縮率は減少し、直径、回復率、残留応力、特性緩和時間はいずれも増加する。多変量の視点は、2 つのレバーの違いを一層明確にする。両者は直交してはいない。どちらも力学的プロファイルの同じ「強度」成分に主に作用し、その作用は懸濁液濃度の方がはるかに強い。両者を分けるのは、エタノールがさらに回復率と残留応力を高め、しかも剛性を *低下させながら* そうするという点である。したがって、エタノール軸に沿って 2 つの物性はトレードオフの関係にある。懸濁液濃度は剛性を変える一方、回復率への *検出可能な* 効果は示さない (*P* = 0.93)。これこそが、ここで 2 つの物性を別々に制御できる理由である。この最後の主張には、本ドキュメントが一貫して適用してきた種類の但し書きを添えておくべきである。40 個のスポンジでは、回復率に対する懸濁液の効果としてデータが許容する上限は約 7 パーセントポイントにとどまり、これはエタノール自身の効果にほぼ匹敵する大きさである。回復率に関する最大の懸濁液対比の 95% 区間は −4.8 から +6.9 パーセントポイントに及び、これに対して推定されたエタノール効果は +7.4 である。「効果が検出されなかった」は「効果がない」ことを意味せず、より大規模な研究では効果が見出される可能性も十分にある。これらのパターンの機構的解釈 (セル壁の肥厚、氷晶テンプレートによる制御、ナノフィルムの剥離とすべり) については冒頭で引用した 2 報の論文を参照されたい。本ドキュメントは、その物語の統計的側面を読者がたどり直し、吟味し、拡張できるようにすることを意図している。
